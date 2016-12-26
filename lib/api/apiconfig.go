@@ -16,6 +16,7 @@ package api
 
 import (
 	"github.com/projectcalico/libcalico-go/lib/api/unversioned"
+	"github.com/projectcalico/libcalico-go/lib/backend/consul"
 	"github.com/projectcalico/libcalico-go/lib/backend/etcd"
 	"github.com/projectcalico/libcalico-go/lib/backend/k8s"
 )
@@ -25,6 +26,7 @@ type DatastoreType string
 const (
 	EtcdV2     DatastoreType = "etcdv2"
 	Kubernetes DatastoreType = "kubernetes"
+	Consul     DatastoreType = "consul"
 )
 
 // CalicoAPIConfig contains the connection information fo
@@ -48,6 +50,9 @@ type CalicoAPIConfigSpec struct {
 
 	// Inline the k8s config fields.
 	k8s.KubeConfig
+
+	// Inline the consul config fields
+	consul.ConsulConfig
 }
 
 // NewCalicoAPIConfig creates a new (zeroed) CalicoAPIConfig struct with the
