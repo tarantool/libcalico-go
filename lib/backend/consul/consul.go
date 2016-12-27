@@ -20,7 +20,7 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-	hashicorpConsul "github.com/hashicorp/consul/api"
+	consulapi "github.com/hashicorp/consul/api"
 	"github.com/projectcalico/libcalico-go/lib/backend/api"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
 	"github.com/projectcalico/libcalico-go/lib/errors"
@@ -40,7 +40,7 @@ type ConsulConfig struct {
 }
 
 type ClientWrapper struct {
-	Client *hashicorpConsul.Client
+	Client *consulapi.Client
 }
 
 type setOperationKind int
@@ -57,15 +57,15 @@ type setOptions struct {
 }
 
 func NewConsulClient(config *ConsulConfig) (*ClientWrapper, error) {
-	auth := hashicorpConsul.HttpBasicAuth{
+	auth := consulapi.HttpBasicAuth{
 		Password: config.ConsulPassword,
 		Username: config.ConsulUsername,
 	}
 	if len(config.ConsulAddress) == 0 {
-		return nil, goerrors.New("no hashicorpConsul address provided")
+		return nil, goerrors.New("no consul address provided")
 	}
 
-	cfg := hashicorpConsul.Config{
+	cfg := consulapi.Config{
 		Address:    config.ConsulAddress,
 		Scheme:     config.ConsulScheme,
 		Datacenter: config.ConsulDatacenter,
@@ -74,7 +74,7 @@ func NewConsulClient(config *ConsulConfig) (*ClientWrapper, error) {
 		WaitTime:   watchTimeout,
 	}
 
-	client, err := hashicorpConsul.NewClient(&cfg)
+	client, err := consulapi.NewClient(&cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (c *ClientWrapper) Update(d *model.KVPair) (*model.KVPair, error) {
 	options := setOptions{Kind: update}
 	if d.Revision != nil {
 		options.Index = d.Revision.(uint64)
-		log.Debugf("Performing CAS against hashicorpConsul index: %v\n", options.Index)
+		log.Debugf("Performing CAS against consulapi index: %v\n", options.Index)
 	}
 
 	return c.set(d, &options)
@@ -136,20 +136,30 @@ func (c *ClientWrapper) Delete(d *model.KVPair) error {
 	if err != nil {
 		return err
 	}
-	kvpair := &hashicorpConsul.KVPair{Key: key}
+	deleteOp := &consulapi.KVTxnOp{Key: key}
 	if d.Revision != nil {
-		kvpair.ModifyIndex = d.Revision.(uint64)
+		deleteOp.Index = d.Revision.(uint64)
 	}
 	log.Debugf("Delete Key: %s", key)
 
 	kv := c.Client.KV()
-	ok, _, err := kv.DeleteCAS(kvpair, nil)
+
+	readyKey, err := model.KeyToDefaultPath(model.ReadyFlagKey{})
+	if err != nil {
+		return err
+	}
+	updateReadyOp := &consulapi.KVTxnOp{Key:readyKey}
+	ok, response, _, err := kv.Txn(consulapi.KVTxnOps{deleteOp, updateReadyOp}, nil)
 	if err != nil {
 		return convertConsulError(err, d.Key)
 	}
 
 	if !ok {
-		return goerrors.New("Delete fails and no error reported")
+		return goerrors.New("Delete fails, transaction rollbacked")
+	}
+
+	if len(response.Errors) > 0 {
+		return createError(response.Errors)
 	}
 
 	// If there are parents to be deleted, delete these as well provided there
@@ -178,7 +188,7 @@ func (c *ClientWrapper) Get(k model.Key) (*model.KVPair, error) {
 		return nil, err
 	}
 	log.Debugf("Get Key: %s", key)
-	r, _, err := c.Client.KV().Get(key, &hashicorpConsul.QueryOptions{RequireConsistent: true})
+	r, _, err := c.Client.KV().Get(key, &consulapi.QueryOptions{RequireConsistent: true})
 	if err != nil {
 		return nil, convertConsulError(err, k)
 	}
@@ -239,7 +249,7 @@ func (c *ClientWrapper) defaultList(l model.ListInterface) ([]*model.KVPair, err
 
 // Process a node returned from a list to filter results based on the List type and to
 // compile and return the required results.
-func filterConsulList(pairs *hashicorpConsul.KVPairs, l model.ListInterface) []*model.KVPair {
+func filterConsulList(pairs *consulapi.KVPairs, l model.ListInterface) []*model.KVPair {
 	kvs := []*model.KVPair{}
 
 	for _, x := range *pairs {
@@ -282,30 +292,30 @@ func (c *ClientWrapper) set(d *model.KVPair, options *setOptions) (*model.KVPair
 		// Implement it via sessions & TTL
 		return nil, goerrors.New("Consul does not support TTL")
 	}
-	logCxt.WithField("options", options).Debug("Setting KV in hashicorpConsul")
+	logCxt.WithField("options", options).Debug("Setting KV in consulapi")
 
-	ops := hashicorpConsul.KVTxnOps{}
+	ops := consulapi.KVTxnOps{}
 	switch options.Kind {
 	case create:
-		ops = append(ops, &hashicorpConsul.KVTxnOp{
+		ops = append(ops, &consulapi.KVTxnOp{
 			Key:   key,
-			Verb:  hashicorpConsul.KVCAS,
+			Verb:  consulapi.KVCAS,
 			Value: bytes,
 			Index: 0,
 		})
 		break
 	case update:
-		ops = append(ops, &hashicorpConsul.KVTxnOp{
+		ops = append(ops, &consulapi.KVTxnOp{
 			Key:   key,
-			Verb:  hashicorpConsul.KVCAS,
+			Verb:  consulapi.KVCAS,
 			Value: bytes,
 			Index: options.Index,
 		})
 		break
 	case replace:
-		ops = append(ops, &hashicorpConsul.KVTxnOp{
+		ops = append(ops, &consulapi.KVTxnOp{
 			Key:   key,
-			Verb:  hashicorpConsul.KVSet,
+			Verb:  consulapi.KVSet,
 			Value: bytes,
 		})
 		break
@@ -314,9 +324,9 @@ func (c *ClientWrapper) set(d *model.KVPair, options *setOptions) (*model.KVPair
 		return nil, goerrors.New("Unsupported set operation")
 	}
 
-	ops = append(ops, &hashicorpConsul.KVTxnOp{
+	ops = append(ops, &consulapi.KVTxnOp{
 		Key:  key,
-		Verb: hashicorpConsul.KVGet,
+		Verb: consulapi.KVGet,
 	})
 
 	ok, response, _, err := c.Client.KV().Txn(ops, nil)
@@ -345,13 +355,13 @@ func (c *ClientWrapper) set(d *model.KVPair, options *setOptions) (*model.KVPair
 	if err != nil {
 		// Log at debug because we don't know how serious this is.
 		// Caller should log if it's actually a problem.
-		logCxt.WithError(err).Debug("Can't parse value returned from hashicorpConsul")
+		logCxt.WithError(err).Debug("Can't parse value returned from consulapi")
 		return nil, convertConsulError(err, d.Key)
 	}
 
 	return d, nil
 }
-func createError(errors hashicorpConsul.TxnErrors) error {
+func createError(errors consulapi.TxnErrors) error {
 	if errors == nil {
 		return nil
 	}
