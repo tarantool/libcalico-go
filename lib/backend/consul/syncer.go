@@ -66,7 +66,7 @@ func (syn *consulSyncer) watchConsul() {
 
 		results, meta, err := syn.client.KV().List(
 			"/calico/v1/",
-			&consulapi.QueryOptions{WaitIndex: clusterIndex})
+			getReadFromNonServerOpts(clusterIndex))
 
 		if err != nil {
 			log.WithError(err).Warn("Failed to get snapshot from consul")
@@ -113,10 +113,15 @@ func (syn *consulSyncer) watchConsul() {
 		}
 	}
 }
+
+func getReadFromNonServerOpts(clusterIndex uint64) *consulapi.QueryOptions {
+	return &consulapi.QueryOptions{WaitIndex: clusterIndex, AllowStale: true, RequireConsistent: false}
+}
+
 func repeatableSync(syn *consulSyncer, state *ClusterState, clusterIndex uint64) error {
 	results, meta, err := syn.client.KV().List(
 		"/calico/v1/",
-		&consulapi.QueryOptions{WaitIndex: clusterIndex})
+		getReadFromNonServerOpts(clusterIndex))
 
 	if err != nil {
 		return err
