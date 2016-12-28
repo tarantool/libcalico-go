@@ -15,23 +15,156 @@
 package consul
 
 import (
-	hashicorpConsul "github.com/hashicorp/consul/api"
+	log "github.com/Sirupsen/logrus"
+	consulapi "github.com/hashicorp/consul/api"
 	"github.com/projectcalico/libcalico-go/lib/backend/api"
+	"github.com/projectcalico/libcalico-go/lib/backend/model"
+	"time"
 )
 
-// defaultEtcdClusterID is default value that an etcd cluster uses if it
-// hasn't been bootstrapped with an explicit value.  We warn if we detect that
-// case because it implies that the cluster hasn't been properly bootstrapped
-// for production.
-func newSyncer(client *hashicorpConsul.Client, callbacks api.SyncerCallbacks) *Syncer {
-	return nil
+// Consul syncer uses blocking call to consul replica to list all keys
+// that have version greater than remembered. Unfortunately, consul will
+// send us full snapshot, so we should manage to create our own diffs
+//
+// Architecture
+//
+// Syncer runs watcher goroutine which polls consul and report diffs to api
+func newSyncer(client *consulapi.Client, callbacks api.SyncerCallbacks) *consulSyncer {
+	return &consulSyncer{
+		callbacks: callbacks,
+		client:    client,
+	}
 }
 
-type Syncer struct {
+type consulSyncer struct {
 	callbacks api.SyncerCallbacks
-	client    *hashicorpConsul.Client
+	client    *consulapi.Client
 	OneShot   bool
 }
 
-func (syn *Syncer) Start() {
+func (syn *consulSyncer) Start() {
+
+}
+
+func (syn *consulSyncer) watchConsul() {
+	log.Info("consul watch thread started.")
+
+	for {
+		syn.callbacks.OnStatusUpdated(api.WaitForDatastore)
+
+		// Do a non-recursive get on the Ready flag to find out the
+		// current consul index.  We'll trigger a snapshot/start polling from that.
+		_, meta, err := syn.client.KV().Get("/calico/v1/Ready", nil)
+		if err != nil {
+			log.WithError(err).Warn("Failed to get Ready key from consul")
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		clusterIndex := meta.LastIndex
+		log.WithField("index", clusterIndex).Info("Polled consul for initial watch index.")
+
+		results, meta, err := syn.client.KV().List(
+			"/calico/v1/",
+			&consulapi.QueryOptions{WaitIndex: clusterIndex})
+
+		if err != nil {
+			log.WithError(err).Warn("Failed to get snapshot from consul")
+			continue
+		}
+
+		syn.callbacks.OnStatusUpdated(api.ResyncInProgress)
+
+		initialUpdates := make([]api.Update, len(results))
+		state := &ClusterState{}
+		for i, x := range results {
+			key := model.KeyFromDefaultPath(x.Key)
+			value, err := model.ParseValue(key, x.Value)
+			updateType := api.UpdateTypeKVNew
+			if err != nil {
+				log.WithField("key", key).Warn("Can't parse value at key.")
+				updateType = api.UpdateTypeKVUnknown
+				value = nil
+			}
+
+			initialUpdates[i] = api.Update{
+				UpdateType: updateType,
+				KVPair: model.KVPair{
+					Key:      key,
+					Revision: x.ModifyIndex,
+					Value:    value,
+				},
+			}
+
+			state.Add(key)
+		}
+
+		syn.callbacks.OnUpdates(initialUpdates)
+		syn.callbacks.OnStatusUpdated(api.InSync)
+
+		// second sync will be run in cycle until we have some consul error
+	watchLoop:
+		for {
+			err = repeatableSync(syn, state, clusterIndex)
+			if err != nil {
+				log.WithError(err).Warn("Failed to get snapshot from consul")
+				break watchLoop
+			}
+		}
+	}
+}
+func repeatableSync(syn *consulSyncer, state *ClusterState, clusterIndex uint64) error {
+	results, meta, err := syn.client.KV().List(
+		"/calico/v1/",
+		&consulapi.QueryOptions{WaitIndex: clusterIndex})
+
+	if err != nil {
+		return err
+	}
+
+	syn.callbacks.OnStatusUpdated(api.ResyncInProgress)
+	updates := make([]api.Update, len(results))
+	tombstones := map[model.Key]bool{}
+	for i, x := range results {
+		key := model.KeyFromDefaultPath(x.Key)
+		value, err := model.ParseValue(key, x.Value)
+		updateType := api.UpdateTypeKVNew
+
+		if tombstones[key] {
+			delete(tombstones, key)
+			updateType = api.UpdateTypeKVUpdated
+		}
+
+		if err != nil {
+			log.WithField("key", key).Warn("Can't parse value at key.")
+			updateType = api.UpdateTypeKVUnknown
+			value = nil
+		}
+
+		updates[i] = api.Update{
+			UpdateType: updateType,
+			KVPair: model.KVPair{
+				Key:      key,
+				Revision: x.ModifyIndex,
+				Value:    value,
+			},
+		}
+
+		state.Add(key)
+	}
+	for x := range tombstones {
+		updates = append(updates, api.Update{
+			UpdateType: api.UpdateTypeKVDeleted,
+			KVPair: model.KVPair{
+				Key:      x,
+				Revision: meta.LastIndex,
+				Value:    nil,
+			},
+		})
+		state.Remove(x)
+	}
+
+	syn.callbacks.OnUpdates(updates)
+	syn.callbacks.OnStatusUpdated(api.InSync)
+	return nil
 }
