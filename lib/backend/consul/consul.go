@@ -31,12 +31,12 @@ var (
 )
 
 type ConsulConfig struct {
-	ConsulScheme     string `json:"consulScheme" envconfig:"consul_SCHEME" default:"http"`
-	ConsulAddress    string `json:"consulAddress" envconfig:"consul_ADDRESS" default:"127.0.0.1:2379"`
-	ConsulUsername   string `json:"consulUsername" envconfig:"consul_USERNAME"`
-	ConsulPassword   string `json:"consulPassword" envconfig:"consul_PASSWORD"`
-	ConsulToken      string `json:"consulToken" envconfig:"consul_TOKEN"`
-	ConsulDatacenter string `json:"consulDatacenter" envconfig:"consul_DATACENTER"`
+	ConsulScheme     string `json:"consulScheme" envconfig:"CONSUL_SCHEME"`
+	ConsulAddress    string `json:"consulAddress" envconfig:"CONSUL_ADDRESS"`
+	ConsulUsername   string `json:"consulUsername" envconfig:"CONSUL_USERNAME"`
+	ConsulPassword   string `json:"consulPassword" envconfig:"CONSUL_PASSWORD"`
+	ConsulToken      string `json:"consulToken" envconfig:"CONSUL_TOKEN"`
+	ConsulDatacenter string `json:"consulDatacenter" envconfig:"CONSUL_DATACENTER"`
 }
 
 type ClientWrapper struct {
@@ -148,7 +148,7 @@ func (c *ClientWrapper) Delete(d *model.KVPair) error {
 	if err != nil {
 		return err
 	}
-	updateReadyOp := &consulapi.KVTxnOp{Key:readyKey}
+	updateReadyOp := &consulapi.KVTxnOp{Key: readyKey}
 	ok, response, _, err := kv.Txn(consulapi.KVTxnOps{deleteOp, updateReadyOp}, nil)
 	if err != nil {
 		return convertConsulError(err, d.Key)
