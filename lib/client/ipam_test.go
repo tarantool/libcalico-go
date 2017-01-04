@@ -1,4 +1,4 @@
-// Copyright (c) 2016 Tigera, Inc. All rights reserved.
+// Copyright (c) 2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -88,20 +88,11 @@ import (
 	. "github.com/onsi/ginkgo/extensions/table"
 
 	"github.com/projectcalico/libcalico-go/lib/api"
-	"github.com/projectcalico/libcalico-go/lib/backend/etcd"
 	"github.com/projectcalico/libcalico-go/lib/client"
 	cerrors "github.com/projectcalico/libcalico-go/lib/errors"
 	cnet "github.com/projectcalico/libcalico-go/lib/net"
 	"github.com/projectcalico/libcalico-go/lib/testutils"
 )
-
-// Setting BackendType to etcdv2 which is the only supported backend at the moment.
-var etcdType api.DatastoreType = "etcdv2"
-
-// Setting localhost as the etcd endpoint location since that's where `make run-etcd` runs it.
-var etcdConfig = etcd.EtcdConfig{
-	EtcdEndpoints: "http://127.0.0.1:2379",
-}
 
 type testArgsClaimAff struct {
 	inNet, host                 string
@@ -120,8 +111,8 @@ var _ = Describe("IPAM tests", func() {
 	// assigned IP to be from the new ipPool that was created, this is to make sure the assigned IP
 	// doesn't come from the old affinedBlock even after the ipPool was deleted.
 	Describe("IPAM AutoAssign from the default pool then delete the pool and assign again", func() {
-		testutils.CleanEtcd()
-		c, _ := testutils.NewClient("")
+		testutils.CleanBackend(configFileName)
+		c, _ := testutils.NewClient(configFileName)
 		ic := setupIPAMClient(c, true)
 
 		host := "host-A"
@@ -204,8 +195,8 @@ var _ = Describe("IPAM tests", func() {
 	})
 
 	Describe("IPAM AutoAssign from any pool", func() {
-		testutils.CleanEtcd()
-		c, _ := testutils.NewClient("")
+		testutils.CleanBackend(configFileName)
+		c, _ := testutils.NewClient(configFileName)
 		ic := setupIPAMClient(c, true)
 
 		testutils.CreateNewIPPool(*c, "10.0.0.0/24", false, false, true)
@@ -236,8 +227,8 @@ var _ = Describe("IPAM tests", func() {
 	})
 
 	Describe("IPAM AutoAssign from different pools", func() {
-		testutils.CleanEtcd()
-		c, _ := testutils.NewClient("")
+		testutils.CleanBackend(configFileName)
+		c, _ := testutils.NewClient(configFileName)
 		ic := setupIPAMClient(c, true)
 
 		host := "host-A"
@@ -336,8 +327,8 @@ var _ = Describe("IPAM tests", func() {
 	})
 
 	Describe("IPAM AutoAssign from different pools - multi", func() {
-		testutils.CleanEtcd()
-		c, _ := testutils.NewClient("")
+		testutils.CleanBackend(configFileName)
+		c, _ := testutils.NewClient(configFileName)
 		ic := setupIPAMClient(c, true)
 
 		host := "host-A"
@@ -486,11 +477,11 @@ var _ = Describe("IPAM tests", func() {
 	DescribeTable("ClaimAffinity: claim IPNet vs actual number of blocks claimed",
 		func(args testArgsClaimAff) {
 			inIPNet := testutils.MustParseCIDR(args.inNet)
-			c, _ := testutils.NewClient("")
+			c, _ := testutils.NewClient(configFileName)
 
 			// Wipe clean etcd, create a new client, and pools when cleanEnv flag is true.
 			if args.cleanEnv {
-				testutils.CleanEtcd()
+				testutils.CleanBackend(configFileName)
 				for _, v := range args.pool {
 					testutils.CreateNewIPPool(*c, v, false, false, true)
 				}
@@ -544,13 +535,13 @@ func testIPAMReleaseIPs(inIP net.IP, poolSubnet []string, cleanEnv bool, assignI
 
 	inIPs := []cnet.IP{cnet.IP{inIP}}
 	if cleanEnv {
-		testutils.CleanEtcd()
-		c, _ := testutils.NewClient("")
+		testutils.CleanBackend(configFileName)
+		c, _ := testutils.NewClient(configFileName)
 		for _, v := range poolSubnet {
 			testutils.CreateNewIPPool(*c, v, false, false, true)
 		}
 	}
-	c, _ := testutils.NewClient("")
+	c, _ := testutils.NewClient(configFileName)
 	ic := setupIPAMClient(c, cleanEnv)
 
 	if len(assignIP) != 0 {
@@ -590,13 +581,13 @@ func testIPAMAssignIP(inIP net.IP, host string, poolSubnet []string, cleanEnv bo
 		Hostname: host,
 	}
 	if cleanEnv {
-		testutils.CleanEtcd()
-		c, _ := testutils.NewClient("")
+		testutils.CleanBackend(configFileName)
+		c, _ := testutils.NewClient(configFileName)
 		for _, v := range poolSubnet {
 			testutils.CreateNewIPPool(*c, v, false, false, true)
 		}
 	}
-	c, _ := testutils.NewClient("")
+	c, _ := testutils.NewClient(configFileName)
 	ic := setupIPAMClient(c, cleanEnv)
 	outErr := ic.AssignIP(args)
 
@@ -618,13 +609,13 @@ func testIPAMAutoAssign(inv4, inv6 int, host string, cleanEnv bool, poolSubnet [
 	}
 
 	if cleanEnv {
-		testutils.CleanEtcd()
-		c, _ := testutils.NewClient("")
+		testutils.CleanBackend(configFileName)
+		c, _ := testutils.NewClient(configFileName)
 		for _, v := range poolSubnet {
 			testutils.CreateNewIPPool(*c, v, false, false, true)
 		}
 	}
-	c, _ := testutils.NewClient("")
+	c, _ := testutils.NewClient(configFileName)
 	ic := setupIPAMClient(c, cleanEnv)
 	v4, v6, outErr := ic.AutoAssign(args)
 

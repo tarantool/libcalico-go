@@ -1,4 +1,4 @@
-// Copyright (c) 2016 Tigera, Inc. All rights reserved.
+// Copyright (c) 2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -34,9 +34,9 @@ var _ = Describe("with config option API tests", func() {
 
 	BeforeEach(func() {
 		// Erase etcd clean
-		testutils.CleanEtcd()
+		testutils.CleanBackend(configFileName)
 
-		c, err := testutils.NewClient("")
+		c, err := testutils.NewClient(configFileName)
 		Expect(err).NotTo(HaveOccurred())
 		config = c.Config()
 	})

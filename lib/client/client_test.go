@@ -1,4 +1,4 @@
-// Copyright (c) 2016 Tigera, Inc. All rights reserved.
+// Copyright (c) 2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,11 +22,19 @@ import (
 	"errors"
 	"os"
 
+	"flag"
+
 	"github.com/projectcalico/libcalico-go/lib/api"
 	"github.com/projectcalico/libcalico-go/lib/backend/etcd"
 	"github.com/projectcalico/libcalico-go/lib/backend/k8s"
 	"github.com/projectcalico/libcalico-go/lib/client"
 )
+
+var configFileName string
+
+func init() {
+	flag.StringVar(&configFileName, "configFileName", "", "Point to config file name to test different backends")
+}
 
 var _ = Describe("Client config tests", func() {
 

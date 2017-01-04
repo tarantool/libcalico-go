@@ -1,4 +1,4 @@
-// Copyright (c) 2016 Tigera, Inc. All rights reserved.
+// Copyright (c) 2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,10 +48,10 @@ var _ = Describe("Node tests", func() {
 	DescribeTable("Node e2e tests",
 		func(meta1, meta2 api.NodeMetadata, spec1, spec2 api.NodeSpec) {
 			// Erase etcd clean.
-			testutils.CleanEtcd()
+			testutils.CleanBackend(configFileName)
 
 			// Create a new client.
-			c, err := testutils.NewClient("")
+			c, err := testutils.NewClient(configFileName)
 			if err != nil {
 				log.Println("Error creating client:", err)
 			}
@@ -76,7 +76,7 @@ var _ = Describe("Node tests", func() {
 			_, err = c.Nodes().Apply(&api.Node{Metadata: meta2, Spec: spec2})
 			Expect(err).NotTo(HaveOccurred())
 
-			testutils.DumpEtcd()
+			testutils.DumpBackend(configFileName)
 
 			// Get node1.  This should not error, spec should match spec1.
 			By("Getting node1 and comparing with spec1")
@@ -189,8 +189,8 @@ var _ = Describe("Node tests", func() {
 	)
 
 	Describe("Checking global config is set only once", func() {
-		testutils.CleanEtcd()
-		c, _ := testutils.NewClient("")
+		testutils.CleanBackend(configFileName)
+		c, _ := testutils.NewClient(configFileName)
 		var guidOrig string
 		var guidNew string
 		var set bool
