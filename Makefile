@@ -35,7 +35,7 @@ test-containerized-mac-docker: $(BUILD_CONTAINER_MARKER) run-etcd
 	docker run --rm --privileged --net=host \
 	-e PLUGIN=calico \
 	-v ${PWD}:/go/src/github.com/projectcalico/libcalico-go:rw \
-	$(BUILD_CONTAINER_NAME) bash -c 'make WHAT=$(WHAT) SKIP=k8s,$(SKIP) ut && chown $(shell id -u):$(shell id -g) -R ./vendor'
+	$(BUILD_CONTAINER_NAME) bash -c 'make WHAT=$(WHAT) SKIP=$(SKIP) ut && chown $(shell id -u):$(shell id -g) -R ./vendor'
 
 ## Install or update the tools used by the build
 .PHONY: update-tools
