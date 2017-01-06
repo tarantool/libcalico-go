@@ -63,15 +63,14 @@ var policySpec2 = api.PolicySpec{
 }
 
 var _ = Describe("Policy tests", func() {
-
 	DescribeTable("Policy e2e tests",
-		func(meta1, meta2 api.PolicyMetadata, spec1, spec2 api.PolicySpec) {
+		func(meta1, meta2 api.PolicyMetadata, spec1, spec2 api.PolicySpec, config *api.CalicoAPIConfig) {
 
-			// Erase etcd clean.
-			testutils.CleanBackend(configFileName)
+			// Erase backend clean.
+			testutils.CleanBackend(config)
 
 			// Create a new client.
-			c, err := testutils.NewClient(configFileName)
+			c, err := testutils.NewClient(config)
 			if err != nil {
 				log.Println("Error creating client:", err)
 			}
@@ -183,31 +182,32 @@ var _ = Describe("Policy tests", func() {
 			Expect(policyList.Items).To(Equal(*emptyPolicyList))
 
 		},
+		testutils.EnhanceWithConfigs(
+			// Test 1: Pass two fully populated PolicySpecs and expect the series of operations to succeed.
+			Entry("Two fully populated PolicySpecs",
+				api.PolicyMetadata{Name: "policy1"},
+				api.PolicyMetadata{Name: "policy2"},
+				policySpec1,
+				policySpec2,
+			),
 
-		// Test 1: Pass two fully populated PolicySpecs and expect the series of operations to succeed.
-		Entry("Two fully populated PolicySpecs",
-			api.PolicyMetadata{Name: "policy1"},
-			api.PolicyMetadata{Name: "policy2"},
-			policySpec1,
-			policySpec2,
-		),
+			// Test 2: Pass one fully populated PolicySpec and another empty PolicySpec and expect the series of operations to succeed.
+			Entry("One fully populated PolicySpec and another empty PolicySpec",
+				api.PolicyMetadata{Name: "policy1"},
+				api.PolicyMetadata{Name: "policy2"},
+				policySpec1,
+				api.PolicySpec{},
+			),
 
-		// Test 2: Pass one fully populated PolicySpec and another empty PolicySpec and expect the series of operations to succeed.
-		Entry("One fully populated PolicySpec and another empty PolicySpec",
-			api.PolicyMetadata{Name: "policy1"},
-			api.PolicyMetadata{Name: "policy2"},
-			policySpec1,
-			api.PolicySpec{},
-		),
-
-		// Test 3: Pass one partially populated PolicySpec and another fully populated PolicySpec and expect the series of operations to succeed.
-		Entry("One partially populated PolicySpec and another fully populated PolicySpec",
-			api.PolicyMetadata{Name: "policy1"},
-			api.PolicyMetadata{Name: "policy2"},
-			api.PolicySpec{
-				Selector: "policy1-selector",
-			},
-			policySpec2,
-		),
+			// Test 3: Pass one partially populated PolicySpec and another fully populated PolicySpec and expect the series of operations to succeed.
+			Entry("One partially populated PolicySpec and another fully populated PolicySpec",
+				api.PolicyMetadata{Name: "policy1"},
+				api.PolicyMetadata{Name: "policy2"},
+				api.PolicySpec{
+					Selector: "policy1-selector",
+				},
+				policySpec2,
+			),
+		)...,
 	)
 })

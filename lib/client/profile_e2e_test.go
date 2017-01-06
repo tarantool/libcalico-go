@@ -60,13 +60,13 @@ var tags2 = []string{"profile2-tag1", "profile2-tag2"}
 var _ = Describe("Profile tests", func() {
 
 	DescribeTable("Profile e2e tests",
-		func(meta1, meta2 api.ProfileMetadata, spec1, spec2 api.ProfileSpec) {
+		func(meta1, meta2 api.ProfileMetadata, spec1, spec2 api.ProfileSpec, config *api.CalicoAPIConfig) {
 
-			// Erase etcd clean.
-			testutils.CleanBackend(configFileName)
+			// Erase backend clean.
+			testutils.CleanBackend(config)
 
 			// Create a new client.
-			c, err := testutils.NewClient(configFileName)
+			c, err := testutils.NewClient(config)
 			if err != nil {
 				log.Println("Error creating client:", err)
 			}
@@ -178,70 +178,71 @@ var _ = Describe("Profile tests", func() {
 			Expect(profileList.Items).To(Equal(*emptyProfileList))
 
 		},
+		testutils.EnhanceWithConfigs(
+			// Test 1: Pass two fully populated ProfileSpecs and expect the series of operations to succeed.
+			Entry("Two fully populated ProfileSpecs",
+				api.ProfileMetadata{
+					Name: "profile1",
+					Labels: map[string]string{
+						"app":  "app-abc",
+						"prod": "yes",
+					},
+					Tags: tags1,
+				},
+				api.ProfileMetadata{
+					Name: "profile2",
+					Labels: map[string]string{
+						"app":  "app-xyz",
+						"prod": "no",
+					},
+					Tags: tags2,
+				},
+				profileSpec1,
+				profileSpec2,
+			),
 
-		// Test 1: Pass two fully populated ProfileSpecs and expect the series of operations to succeed.
-		Entry("Two fully populated ProfileSpecs",
-			api.ProfileMetadata{
-				Name: "profile1",
-				Labels: map[string]string{
-					"app":  "app-abc",
-					"prod": "yes",
+			// Test 2: Pass one fully populated ProfileSpec and another empty ProfileSpec and expect the series of operations to succeed.
+			Entry("One fully populated ProfileSpec and another empty ProfileSpec",
+				api.ProfileMetadata{
+					Name: "profile1",
+					Labels: map[string]string{
+						"app":  "app-abc",
+						"prod": "yes",
+					},
+					Tags: tags2,
 				},
-				Tags: tags1,
-			},
-			api.ProfileMetadata{
-				Name: "profile2",
-				Labels: map[string]string{
-					"app":  "app-xyz",
-					"prod": "no",
+				api.ProfileMetadata{
+					Name: "profile2",
+					Labels: map[string]string{
+						"app":  "app-xyz",
+						"prod": "no",
+					},
 				},
-				Tags: tags2,
-			},
-			profileSpec1,
-			profileSpec2,
-		),
+				profileSpec1,
+				api.ProfileSpec{},
+			),
 
-		// Test 2: Pass one fully populated ProfileSpec and another empty ProfileSpec and expect the series of operations to succeed.
-		Entry("One fully populated ProfileSpec and another empty ProfileSpec",
-			api.ProfileMetadata{
-				Name: "profile1",
-				Labels: map[string]string{
-					"app":  "app-abc",
-					"prod": "yes",
+			// Test 3: Pass one partially populated ProfileSpec and another fully populated ProfileSpec and expect the series of operations to succeed.
+			Entry("One partially populated ProfileSpec and another fully populated ProfileSpec",
+				api.ProfileMetadata{
+					Name: "profile1",
+					Labels: map[string]string{
+						"app":  "app-abc",
+						"prod": "yes",
+					},
 				},
-				Tags: tags2,
-			},
-			api.ProfileMetadata{
-				Name: "profile2",
-				Labels: map[string]string{
-					"app":  "app-xyz",
-					"prod": "no",
+				api.ProfileMetadata{
+					Name: "profile2",
+					Labels: map[string]string{
+						"app":  "app-xyz",
+						"prod": "no",
+					},
 				},
-			},
-			profileSpec1,
-			api.ProfileSpec{},
-		),
-
-		// Test 3: Pass one partially populated ProfileSpec and another fully populated ProfileSpec and expect the series of operations to succeed.
-		Entry("One partially populated ProfileSpec and another fully populated ProfileSpec",
-			api.ProfileMetadata{
-				Name: "profile1",
-				Labels: map[string]string{
-					"app":  "app-abc",
-					"prod": "yes",
+				api.ProfileSpec{
+					IngressRules: []api.Rule{testutils.InRule1},
 				},
-			},
-			api.ProfileMetadata{
-				Name: "profile2",
-				Labels: map[string]string{
-					"app":  "app-xyz",
-					"prod": "no",
-				},
-			},
-			api.ProfileSpec{
-				IngressRules: []api.Rule{testutils.InRule1},
-			},
-			profileSpec2,
-		),
+				profileSpec2,
+			),
+		)...,
 	)
 })

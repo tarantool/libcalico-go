@@ -49,13 +49,13 @@ import (
 var _ = Describe("IPPool tests", func() {
 
 	DescribeTable("IPPool e2e tests",
-		func(meta1, meta2 api.IPPoolMetadata, spec1, spec2 api.IPPoolSpec) {
+		func(meta1, meta2 api.IPPoolMetadata, spec1, spec2 api.IPPoolSpec, config *api.CalicoAPIConfig) {
 
-			// Erase etcd clean.
-			testutils.CleanBackend(configFileName)
+			// Erase backend clean.
+			testutils.CleanBackend(config)
 
 			// Create a new client.
-			c, err := testutils.NewClient(configFileName)
+			c, err := testutils.NewClient(config)
 			if err != nil {
 				log.Println("Error creating client:", err)
 			}
@@ -166,70 +166,71 @@ var _ = Describe("IPPool tests", func() {
 			// Expect returned poolList to contain empty poolList.
 			Expect(poolList.Items).To(Equal(*emptyPoolList))
 		},
+		testutils.EnhanceWithConfigs(
+			// Test 1: Pass two fully populated IPPoolSpecs and expect the series of operations to succeed.
+			Entry("Two fully populated IPPoolSpecs",
+				api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("10.0.0.0/24")},
+				api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("192.168.0.0/24")},
+				api.IPPoolSpec{
+					IPIP: &api.IPIPConfiguration{
+						Enabled: true,
+					},
+					NATOutgoing: true,
+					Disabled:    true,
+				},
+				api.IPPoolSpec{
+					IPIP:        nil,
+					NATOutgoing: true,
+					Disabled:    false,
+				}),
 
-		// Test 1: Pass two fully populated IPPoolSpecs and expect the series of operations to succeed.
-		Entry("Two fully populated IPPoolSpecs",
-			api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("10.0.0.0/24")},
-			api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("192.168.0.0/24")},
-			api.IPPoolSpec{
-				IPIP: &api.IPIPConfiguration{
-					Enabled: true,
+			// Test 2: Pass one partially populated IPPoolSpec and another fully populated IPPoolSpec and expect the series of operations to succeed.
+			Entry("One partially populated IPPoolSpec and another fully populated IPPoolSpec",
+				api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("10.0.0.0/24")},
+				api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("192.168.0.0/24")},
+				api.IPPoolSpec{
+					IPIP: &api.IPIPConfiguration{
+						Enabled: true,
+					},
 				},
-				NATOutgoing: true,
-				Disabled:    true,
-			},
-			api.IPPoolSpec{
-				IPIP:        nil,
-				NATOutgoing: true,
-				Disabled:    false,
-			}),
+				api.IPPoolSpec{
+					IPIP:        nil,
+					NATOutgoing: true,
+					Disabled:    true,
+				}),
 
-		// Test 2: Pass one partially populated IPPoolSpec and another fully populated IPPoolSpec and expect the series of operations to succeed.
-		Entry("One partially populated IPPoolSpec and another fully populated IPPoolSpec",
-			api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("10.0.0.0/24")},
-			api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("192.168.0.0/24")},
-			api.IPPoolSpec{
-				IPIP: &api.IPIPConfiguration{
-					Enabled: true,
+			// Test 3: Pass one fully populated IPPoolSpec and another empty IPPoolSpec and expect the series of operations to succeed.
+			Entry("One fully populated IPPoolSpec and another empty IPPoolSpec",
+				api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("10.0.0.0/24")},
+				api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("192.168.0.0/24")},
+				api.IPPoolSpec{
+					IPIP: &api.IPIPConfiguration{
+						Enabled: true,
+					},
+					NATOutgoing: true,
+					Disabled:    true,
 				},
-			},
-			api.IPPoolSpec{
-				IPIP:        nil,
-				NATOutgoing: true,
-				Disabled:    true,
-			}),
+				api.IPPoolSpec{},
+			),
 
-		// Test 3: Pass one fully populated IPPoolSpec and another empty IPPoolSpec and expect the series of operations to succeed.
-		Entry("One fully populated IPPoolSpec and another empty IPPoolSpec",
-			api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("10.0.0.0/24")},
-			api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("192.168.0.0/24")},
-			api.IPPoolSpec{
-				IPIP: &api.IPIPConfiguration{
-					Enabled: true,
+			// Test 4: Pass two fully populated IPPoolSpecs with two IPPoolMetadata (one IPv4 and another IPv6) and expect the series of operations to succeed.
+			Entry("Two fully populated IPPoolSpecs with two IPPoolMetadata (one IPv4 and another IPv6)",
+				api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("10.0.0.0/24")},
+				api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("fe80::00/120")},
+				api.IPPoolSpec{
+					IPIP: &api.IPIPConfiguration{
+						Enabled: true,
+					},
+					NATOutgoing: true,
+					Disabled:    true,
 				},
-				NATOutgoing: true,
-				Disabled:    true,
-			},
-			api.IPPoolSpec{},
-		),
-
-		// Test 4: Pass two fully populated IPPoolSpecs with two IPPoolMetadata (one IPv4 and another IPv6) and expect the series of operations to succeed.
-		Entry("Two fully populated IPPoolSpecs with two IPPoolMetadata (one IPv4 and another IPv6)",
-			api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("10.0.0.0/24")},
-			api.IPPoolMetadata{CIDR: testutils.MustParseCIDR("fe80::00/120")},
-			api.IPPoolSpec{
-				IPIP: &api.IPIPConfiguration{
-					Enabled: true,
-				},
-				NATOutgoing: true,
-				Disabled:    true,
-			},
-			api.IPPoolSpec{
-				IPIP: &api.IPIPConfiguration{
-					Enabled: true,
-				},
-				NATOutgoing: false,
-				Disabled:    false,
-			}),
+				api.IPPoolSpec{
+					IPIP: &api.IPIPConfiguration{
+						Enabled: true,
+					},
+					NATOutgoing: false,
+					Disabled:    false,
+				}),
+		)...,
 	)
 })

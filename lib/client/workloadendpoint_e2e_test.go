@@ -59,13 +59,13 @@ var _ = Describe("WorkloadEndpoint tests", func() {
 	ipv61 := testutils.MustParseIP("fe80::33")
 
 	DescribeTable("WorkloadEndpoint e2e tests",
-		func(meta1, meta2 api.WorkloadEndpointMetadata, spec1, spec2 api.WorkloadEndpointSpec) {
+		func(meta1, meta2 api.WorkloadEndpointMetadata, spec1, spec2 api.WorkloadEndpointSpec, config *api.CalicoAPIConfig) {
 
-			// Erase etcd clean.
-			testutils.CleanBackend(configFileName)
+			// Erase backend clean.
+			testutils.CleanBackend(config)
 
 			// Create a new client.
-			c, err := testutils.NewClient(configFileName)
+			c, err := testutils.NewClient(config)
 			if err != nil {
 				log.Println("Error creating client:", err)
 			}
@@ -177,140 +177,140 @@ var _ = Describe("WorkloadEndpoint tests", func() {
 			Expect(WorkloadEndpointList.Items).To(Equal(*emptyWorkloadEndpointList))
 
 		},
-
-		// Test 1: Pass two fully populated WorkloadEndpointSpecs and expect the series of operations to succeed.
-		Entry("Two fully populated WorkloadEndpointSpecs",
-			api.WorkloadEndpointMetadata{
-				Name:         "host1",
-				Workload:     "workload1",
-				Orchestrator: "kubernetes",
-				Node:         "node1",
-				Labels: map[string]string{
-					"app":  "app-abc",
-					"prod": "no",
-				}},
-			api.WorkloadEndpointMetadata{
-				Name:         "host2",
-				Workload:     "workload2",
-				Orchestrator: "mesos",
-				Node:         "node2",
-				Labels: map[string]string{
-					"app":  "app-xyz",
-					"prod": "yes",
-				}},
-			api.WorkloadEndpointSpec{
-				IPNetworks: []cnet.IPNet{cidr1, cidr2},
-				IPNATs: []api.IPNAT{
-					{
-						InternalIP: testutils.MustParseIP("10.0.0.0"),
-						ExternalIP: testutils.MustParseIP("20.0.0.0"),
+		testutils.EnhanceWithConfigs(
+			// Test 1: Pass two fully populated WorkloadEndpointSpecs and expect the series of operations to succeed.
+			Entry("Two fully populated WorkloadEndpointSpecs",
+				api.WorkloadEndpointMetadata{
+					Name:         "host1",
+					Workload:     "workload1",
+					Orchestrator: "kubernetes",
+					Node:         "node1",
+					Labels: map[string]string{
+						"app":  "app-abc",
+						"prod": "no",
+					}},
+				api.WorkloadEndpointMetadata{
+					Name:         "host2",
+					Workload:     "workload2",
+					Orchestrator: "mesos",
+					Node:         "node2",
+					Labels: map[string]string{
+						"app":  "app-xyz",
+						"prod": "yes",
+					}},
+				api.WorkloadEndpointSpec{
+					IPNetworks: []cnet.IPNet{cidr1, cidr2},
+					IPNATs: []api.IPNAT{
+						{
+							InternalIP: testutils.MustParseIP("10.0.0.0"),
+							ExternalIP: testutils.MustParseIP("20.0.0.0"),
+						},
 					},
-				},
 
-				IPv4Gateway:   &cnet.IP{net.ParseIP("10.0.0.1")},
-				IPv6Gateway:   &cnet.IP{net.ParseIP("fe80::33")},
-				Profiles:      []string{"profile1", "profile2"},
-				InterfaceName: "eth0",
-				MAC:           &cnet.MAC{mac1},
-			},
-			api.WorkloadEndpointSpec{
-				IPNetworks: []cnet.IPNet{cidr3, cidr4},
-				IPNATs: []api.IPNAT{
-					{
-						InternalIP: testutils.MustParseIP("192.168.0.0"),
-						ExternalIP: testutils.MustParseIP("192.168.1.1"),
+					IPv4Gateway:   &cnet.IP{net.ParseIP("10.0.0.1")},
+					IPv6Gateway:   &cnet.IP{net.ParseIP("fe80::33")},
+					Profiles:      []string{"profile1", "profile2"},
+					InterfaceName: "eth0",
+					MAC:           &cnet.MAC{mac1},
+				},
+				api.WorkloadEndpointSpec{
+					IPNetworks: []cnet.IPNet{cidr3, cidr4},
+					IPNATs: []api.IPNAT{
+						{
+							InternalIP: testutils.MustParseIP("192.168.0.0"),
+							ExternalIP: testutils.MustParseIP("192.168.1.1"),
+						},
 					},
-				},
 
-				IPv4Gateway:   &cnet.IP{net.ParseIP("192.168.0.1")},
-				IPv6Gateway:   &cnet.IP{net.ParseIP("fe80::33")},
-				Profiles:      []string{"profile3", "profile4"},
-				InterfaceName: "eth1",
-				MAC:           &cnet.MAC{mac2},
-			}),
+					IPv4Gateway:   &cnet.IP{net.ParseIP("192.168.0.1")},
+					IPv6Gateway:   &cnet.IP{net.ParseIP("fe80::33")},
+					Profiles:      []string{"profile3", "profile4"},
+					InterfaceName: "eth1",
+					MAC:           &cnet.MAC{mac2},
+				}),
 
-		// Test 2: Pass one partially populated WorkloadEndpointSpec and another fully populated WorkloadEndpointSpec and expect the series of operations to succeed.
-		Entry("One partially populated WorkloadEndpointSpec and another fully populated WorkloadEndpointSpec",
-			api.WorkloadEndpointMetadata{
-				Name:         "host1",
-				Workload:     "workload1",
-				Orchestrator: "kubernetes",
-				Node:         "node1",
-				Labels: map[string]string{
-					"app":  "app-abc",
-					"prod": "no",
-				}},
-			api.WorkloadEndpointMetadata{
-				Name:         "host2",
-				Workload:     "workload2",
-				Orchestrator: "mesos",
-				Node:         "node2",
-				Labels: map[string]string{
-					"app":  "app-xyz",
-					"prod": "yes",
-				}},
-			api.WorkloadEndpointSpec{
-				IPNetworks: []cnet.IPNet{cidr1, cidr2},
-				IPNATs: []api.IPNAT{
-					{
-						InternalIP: testutils.MustParseIP("10.0.0.0"),
+			// Test 2: Pass one partially populated WorkloadEndpointSpec and another fully populated WorkloadEndpointSpec and expect the series of operations to succeed.
+			Entry("One partially populated WorkloadEndpointSpec and another fully populated WorkloadEndpointSpec",
+				api.WorkloadEndpointMetadata{
+					Name:         "host1",
+					Workload:     "workload1",
+					Orchestrator: "kubernetes",
+					Node:         "node1",
+					Labels: map[string]string{
+						"app":  "app-abc",
+						"prod": "no",
+					}},
+				api.WorkloadEndpointMetadata{
+					Name:         "host2",
+					Workload:     "workload2",
+					Orchestrator: "mesos",
+					Node:         "node2",
+					Labels: map[string]string{
+						"app":  "app-xyz",
+						"prod": "yes",
+					}},
+				api.WorkloadEndpointSpec{
+					IPNetworks: []cnet.IPNet{cidr1, cidr2},
+					IPNATs: []api.IPNAT{
+						{
+							InternalIP: testutils.MustParseIP("10.0.0.0"),
+						},
 					},
+					InterfaceName: "eth1",
+					MAC:           &cnet.MAC{mac2},
 				},
-				InterfaceName: "eth1",
-				MAC:           &cnet.MAC{mac2},
-			},
-			api.WorkloadEndpointSpec{
-				IPNetworks: []cnet.IPNet{cidr3, cidr4},
-				IPNATs: []api.IPNAT{
-					{
-						InternalIP: testutils.MustParseIP("192.168.0.0"),
-						ExternalIP: testutils.MustParseIP("192.168.1.1"),
+				api.WorkloadEndpointSpec{
+					IPNetworks: []cnet.IPNet{cidr3, cidr4},
+					IPNATs: []api.IPNAT{
+						{
+							InternalIP: testutils.MustParseIP("192.168.0.0"),
+							ExternalIP: testutils.MustParseIP("192.168.1.1"),
+						},
 					},
-				},
 
-				IPv4Gateway:   &cnet.IP{net.ParseIP("192.168.0.1")},
-				IPv6Gateway:   &cnet.IP{net.ParseIP("fe80::33")},
-				Profiles:      []string{"profile3", "profile4"},
-				InterfaceName: "eth1",
-				MAC:           &cnet.MAC{mac2},
-			}),
+					IPv4Gateway:   &cnet.IP{net.ParseIP("192.168.0.1")},
+					IPv6Gateway:   &cnet.IP{net.ParseIP("fe80::33")},
+					Profiles:      []string{"profile3", "profile4"},
+					InterfaceName: "eth1",
+					MAC:           &cnet.MAC{mac2},
+				}),
 
-		// Test 3: Pass one fully populated WorkloadEndpointSpec and another empty WorkloadEndpointSpec and expect the series of operations to succeed.
-		Entry("One fully populated WorkloadEndpointSpec and another empty WorkloadEndpointSpec",
-			api.WorkloadEndpointMetadata{
-				Name:         "host1",
-				Workload:     "workload1",
-				Orchestrator: "kubernetes",
-				Node:         "node1",
-				Labels: map[string]string{
-					"app":  "app-abc",
-					"prod": "no",
-				}},
-			api.WorkloadEndpointMetadata{
-				Name:         "host2",
-				Workload:     "workload2",
-				Orchestrator: "mesos",
-				Node:         "node2",
-				Labels: map[string]string{
-					"app":  "app-xyz",
-					"prod": "yes",
-				}},
-			api.WorkloadEndpointSpec{
-				IPNetworks: []cnet.IPNet{cidr1, cidr2},
-				IPNATs: []api.IPNAT{
-					{
-						InternalIP: testutils.MustParseIP("10.0.0.0"),
-						ExternalIP: testutils.MustParseIP("20.0.0.0"),
+			// Test 3: Pass one fully populated WorkloadEndpointSpec and another empty WorkloadEndpointSpec and expect the series of operations to succeed.
+			Entry("One fully populated WorkloadEndpointSpec and another empty WorkloadEndpointSpec",
+				api.WorkloadEndpointMetadata{
+					Name:         "host1",
+					Workload:     "workload1",
+					Orchestrator: "kubernetes",
+					Node:         "node1",
+					Labels: map[string]string{
+						"app":  "app-abc",
+						"prod": "no",
+					}},
+				api.WorkloadEndpointMetadata{
+					Name:         "host2",
+					Workload:     "workload2",
+					Orchestrator: "mesos",
+					Node:         "node2",
+					Labels: map[string]string{
+						"app":  "app-xyz",
+						"prod": "yes",
+					}},
+				api.WorkloadEndpointSpec{
+					IPNetworks: []cnet.IPNet{cidr1, cidr2},
+					IPNATs: []api.IPNAT{
+						{
+							InternalIP: testutils.MustParseIP("10.0.0.0"),
+							ExternalIP: testutils.MustParseIP("20.0.0.0"),
+						},
 					},
-				},
 
-				IPv4Gateway:   &ipv41,
-				IPv6Gateway:   &ipv61,
-				Profiles:      []string{"profile1", "profile2"},
-				InterfaceName: "eth0",
-				MAC:           &cnet.MAC{mac1},
-			},
-			api.WorkloadEndpointSpec{}),
+					IPv4Gateway:   &ipv41,
+					IPv6Gateway:   &ipv61,
+					Profiles:      []string{"profile1", "profile2"},
+					InterfaceName: "eth0",
+					MAC:           &cnet.MAC{mac1},
+				},
+				api.WorkloadEndpointSpec{}),
+		)...,
 	)
-
 })

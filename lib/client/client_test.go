@@ -22,19 +22,11 @@ import (
 	"errors"
 	"os"
 
-	"flag"
-
 	"github.com/projectcalico/libcalico-go/lib/api"
 	"github.com/projectcalico/libcalico-go/lib/backend/etcd"
 	"github.com/projectcalico/libcalico-go/lib/backend/k8s"
 	"github.com/projectcalico/libcalico-go/lib/client"
 )
-
-var configFileName string
-
-func init() {
-	flag.StringVar(&configFileName, "configFileName", "", "Point to config file name to test different backends")
-}
 
 var _ = Describe("Client config tests", func() {
 

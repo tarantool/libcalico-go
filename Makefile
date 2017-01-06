@@ -31,7 +31,7 @@ test-containerized: $(BUILD_CONTAINER_MARKER) run-kubernetes-master
 
 .PHONY: test-containerized-mac-docker
 ## Run the tests in a conteiner without k8s. https://github.com/vyshane/kid/issues/14
-test-containerized-mac-docker: $(BUILD_CONTAINER_MARKER) run-etcd
+test-containerized-mac-docker: $(BUILD_CONTAINER_MARKER) run-consul
 	docker run --rm --privileged --net=host \
 	-e PLUGIN=calico \
 	-v ${PWD}:/go/src/github.com/projectcalico/libcalico-go:rw \
@@ -55,7 +55,14 @@ run-etcd:
 	--advertise-client-urls "http://$(LOCAL_IP_ENV):2379,http://127.0.0.1:2379,http://$(LOCAL_IP_ENV):4001,http://127.0.0.1:4001" \
 	--listen-client-urls "http://0.0.0.0:2379,http://0.0.0.0:4001"
 
-run-kubernetes-master: stop-kubernetes-master run-etcd
+## Run consul as a container
+run-consul: run-etcd
+	-docker rm -f calico-consul
+	docker run --detach \
+		--net=host \
+		--name calico-consul consul:0.7.2
+
+run-kubernetes-master: stop-kubernetes-master run-consul
 	# Run the kubelet which will launch the master components in a pod.
 	docker run \
                  -v /:/rootfs:ro \

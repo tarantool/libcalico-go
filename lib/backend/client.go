@@ -1,4 +1,4 @@
-// Copyright (c) 2016 Tigera, Inc. All rights reserved.
+// Copyright (c) 2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,6 +30,18 @@ import (
 // NewClient creates a new backend datastore client.
 func NewClient(config api.CalicoAPIConfig) (c bapi.Client, err error) {
 	log.Debugf("Using datastore type '%s'", config.Spec.DatastoreType)
+	c, err = NewRawClient(config)
+	if c != nil {
+		// Wrap the backend, which deals only in raw KV pairs with an
+		// adaptor that handles aggregate datatypes.  This allows for
+		// reading and writing Profile objects, which are composed
+		// of multiple backend keys.
+		c = compat.NewAdaptor(c)
+	}
+	return
+}
+
+func NewRawClient(config api.CalicoAPIConfig) (c bapi.Client, err error) {
 	switch config.Spec.DatastoreType {
 	case api.EtcdV2:
 		c, err = etcd.NewEtcdClient(&config.Spec.EtcdConfig)
@@ -40,13 +52,6 @@ func NewClient(config api.CalicoAPIConfig) (c bapi.Client, err error) {
 	default:
 		err = errors.New(fmt.Sprintf("Unknown datastore type: %v",
 			config.Spec.DatastoreType))
-	}
-	if c != nil {
-		// Wrap the backend, which deals only in raw KV pairs with an
-		// adaptor that handles aggregate datatypes.  This allows for
-		// reading and writing Profile objects, which are composed
-		// of multiple backend keys.
-		c = compat.NewAdaptor(c)
 	}
 	return
 }

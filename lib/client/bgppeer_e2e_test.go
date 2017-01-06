@@ -47,15 +47,14 @@ import (
 )
 
 var _ = Describe("BGPPeer tests", func() {
-
 	DescribeTable("BGPPeer e2e tests",
-		func(meta1, meta2 api.BGPPeerMetadata, spec1, spec2 api.BGPPeerSpec) {
+		func(meta1, meta2 api.BGPPeerMetadata, spec1, spec2 api.BGPPeerSpec, config *api.CalicoAPIConfig) {
 
-			// Erase etcd clean.
-			testutils.CleanBackend(configFileName)
+			// Erase backend clean.
+			testutils.CleanBackend(config)
 
 			// Create a new client.
-			c, err := testutils.NewClient(configFileName)
+			c, err := testutils.NewClient(config)
 			if err != nil {
 				log.Println("Error creating client:", err)
 			}
@@ -163,40 +162,40 @@ var _ = Describe("BGPPeer tests", func() {
 			// Expect returned BGPPeerList to contain empty BGPPeerList.
 			Expect(BGPPeerList.Items).To(Equal(*emptyBGPPeerList))
 		},
+		testutils.EnhanceWithConfigs(
+			// Test 1: Pass two fully populated BGPPeerSpecs and expect the series of operations to succeed.
+			Entry("Two fully populated BGPPeerSpecs",
+				api.BGPPeerMetadata{
+					Scope:  scope.Scope("node"),
+					Node:   "node1",
+					PeerIP: testutils.MustParseIP("10.0.0.1"),
+				},
+				api.BGPPeerMetadata{
+					Scope:  scope.Scope("global"),
+					PeerIP: testutils.MustParseIP("20.0.0.1"),
+				},
+				api.BGPPeerSpec{
+					ASNumber: numorstring.ASNumber(6512),
+				},
+				api.BGPPeerSpec{
+					ASNumber: numorstring.ASNumber(6511),
+				}),
 
-		// Test 1: Pass two fully populated BGPPeerSpecs and expect the series of operations to succeed.
-		Entry("Two fully populated BGPPeerSpecs",
-			api.BGPPeerMetadata{
-				Scope:  scope.Scope("node"),
-				Node:   "node1",
-				PeerIP: testutils.MustParseIP("10.0.0.1"),
-			},
-			api.BGPPeerMetadata{
-				Scope:  scope.Scope("global"),
-				PeerIP: testutils.MustParseIP("20.0.0.1"),
-			},
-			api.BGPPeerSpec{
-				ASNumber: numorstring.ASNumber(6512),
-			},
-			api.BGPPeerSpec{
-				ASNumber: numorstring.ASNumber(6511),
-			}),
-
-		// Test 2: Pass one fully populated BGPPeerSpec and another empty BGPPeerSpec and expect the series of operations to succeed.
-		Entry("One fully populated BGPPeerSpec and another empty BGPPeerSpec",
-			api.BGPPeerMetadata{
-				Scope:  scope.Scope("node"),
-				Node:   "node1",
-				PeerIP: testutils.MustParseIP("10.0.0.1"),
-			},
-			api.BGPPeerMetadata{
-				Scope:  scope.Scope("global"),
-				PeerIP: testutils.MustParseIP("20.0.0.1"),
-			},
-			api.BGPPeerSpec{
-				ASNumber: numorstring.ASNumber(6512),
-			},
-			api.BGPPeerSpec{}),
+			// Test 2: Pass one fully populated BGPPeerSpec and another empty BGPPeerSpec and expect the series of operations to succeed.
+			Entry("One fully populated BGPPeerSpec and another empty BGPPeerSpec",
+				api.BGPPeerMetadata{
+					Scope:  scope.Scope("node"),
+					Node:   "node1",
+					PeerIP: testutils.MustParseIP("10.0.0.1"),
+				},
+				api.BGPPeerMetadata{
+					Scope:  scope.Scope("global"),
+					PeerIP: testutils.MustParseIP("20.0.0.1"),
+				},
+				api.BGPPeerSpec{
+					ASNumber: numorstring.ASNumber(6512),
+				},
+				api.BGPPeerSpec{}),
+		)...,
 	)
-
 })

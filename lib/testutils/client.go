@@ -1,4 +1,4 @@
-// Copyright (c) 2016 Tigera, Inc. All rights reserved.
+// Copyright (c) 2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package testutils
 import (
 	"log"
 	"net"
-	"os"
 
 	"github.com/projectcalico/libcalico-go/lib/api"
 	"github.com/projectcalico/libcalico-go/lib/api/unversioned"
@@ -27,16 +26,7 @@ import (
 
 // NewClient is a util function to create a new default client.
 // When passed empty string, it loads the default config instead from a config file.
-func NewClient(cf string) (*client.Client, error) {
-	if _, err := os.Stat(cf); err != nil {
-		cf = ""
-	}
-
-	cfg, err := client.LoadClientConfig(cf)
-	if err != nil {
-		return nil, err
-	}
-
+func NewClient(cfg *api.CalicoAPIConfig) (*client.Client, error) {
 	c, err := client.New(*cfg)
 	if err != nil {
 		return nil, err

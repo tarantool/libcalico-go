@@ -16,63 +16,57 @@ package backend_test
 
 import (
 	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
 
-	"github.com/projectcalico/libcalico-go/lib/backend/etcd"
+	"github.com/projectcalico/libcalico-go/lib/api"
+	"github.com/projectcalico/libcalico-go/lib/backend"
 	"github.com/projectcalico/libcalico-go/lib/testutils"
 )
 
-// Setting localhost as the etcd endpoint location since that's where `make run-etcd` runs it.
-var etcdConfig = &etcd.EtcdConfig{
-	EtcdEndpoints: "http://127.0.0.1:2379",
-}
-
 var _ = Describe("Backend tests", func() {
-	Describe("etcd GET/List Revision values", func() {
-		testutils.CleanBackend("")
+	DescribeTable("etcd GET/List Revision values",
+		func(config *api.CalicoAPIConfig) {
+			testutils.CleanBackend(config)
 
-		etcdClient, _ := etcd.NewEtcdClient(etcdConfig)
+			client, _ := backend.NewRawClient(*config)
 
-		Context("CREATE a Block", func() {
-			block := &model.KVPair{
-				Key: model.BlockKey{
-					CIDR: testutils.MustParseCIDR("10.0.0.0/26"),
-				},
-				Value: model.AllocationBlock{
-					CIDR: testutils.MustParseCIDR("10.0.0.0/26"),
-				},
-			}
+			Context("CREATE a Block", func() {
+				block := &model.KVPair{
+					Key: model.BlockKey{
+						CIDR: testutils.MustParseCIDR("10.0.0.0/26"),
+					},
+					Value: model.AllocationBlock{
+						CIDR: testutils.MustParseCIDR("10.0.0.0/26"),
+					},
+				}
 
-			_, cErr := etcdClient.Create(block)
+				_, cErr := client.Create(block)
 
-			It("should succeed without an error", func() {
-				Expect(cErr).NotTo(HaveOccurred())
+				Expect(cErr).NotTo(HaveOccurred(), "should succeed without an error")
 			})
-		})
 
-		Context("GET BlockKey", func() {
-			key := model.BlockKey{
-				CIDR: testutils.MustParseCIDR("10.0.0.0/26"),
-			}
-			b, bErr := etcdClient.Get(key)
-			It("Revision field should not be nil", func() {
-				Expect(bErr).NotTo(HaveOccurred())
-				Expect(b.Revision).NotTo(BeNil())
+			Context("GET BlockKey", func() {
+				key := model.BlockKey{
+					CIDR: testutils.MustParseCIDR("10.0.0.0/26"),
+				}
+				b, bErr := client.Get(key)
+				Expect(bErr).NotTo(HaveOccurred(), "Revision field should not be nil")
+				Expect(b.Revision).NotTo(BeNil(), "Revision field should not be nil")
 			})
-		})
 
-		Context("LIST BlockKey", func() {
-			blockListOpt := model.BlockListOptions{
-				IPVersion: 4,
-			}
-			bl, blErr := etcdClient.List(blockListOpt)
-			for _, blv := range bl {
-				It("Revision field should not be nil", func() {
-					Expect(blErr).NotTo(HaveOccurred())
-					Expect(blv.Revision).NotTo(BeNil())
-				})
-			}
-		})
-	})
+			Context("LIST BlockKey", func() {
+				blockListOpt := model.BlockListOptions{
+					IPVersion: 4,
+				}
+				bl, blErr := client.List(blockListOpt)
+				for _, blv := range bl {
+					Expect(blErr).NotTo(HaveOccurred(), "Revision field should not be nil")
+					Expect(blv.Revision).NotTo(BeNil(), "Revision field should not be nil")
+				}
+			})
+		},
+		testutils.GetEmptyEntriesWithConfigs()...,
+	)
 })

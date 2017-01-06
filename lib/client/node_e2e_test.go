@@ -46,12 +46,12 @@ var _ = Describe("Node tests", func() {
 	asn := numorstring.ASNumber(12345)
 
 	DescribeTable("Node e2e tests",
-		func(meta1, meta2 api.NodeMetadata, spec1, spec2 api.NodeSpec) {
-			// Erase etcd clean.
-			testutils.CleanBackend(configFileName)
+		func(meta1, meta2 api.NodeMetadata, spec1, spec2 api.NodeSpec, config *api.CalicoAPIConfig) {
+			// Erase backend clean.
+			testutils.CleanBackend(config)
 
 			// Create a new client.
-			c, err := testutils.NewClient(configFileName)
+			c, err := testutils.NewClient(config)
 			if err != nil {
 				log.Println("Error creating client:", err)
 			}
@@ -76,7 +76,7 @@ var _ = Describe("Node tests", func() {
 			_, err = c.Nodes().Apply(&api.Node{Metadata: meta2, Spec: spec2})
 			Expect(err).NotTo(HaveOccurred())
 
-			testutils.DumpBackend(configFileName)
+			testutils.DumpBackend(config)
 
 			// Get node1.  This should not error, spec should match spec1.
 			By("Getting node1 and comparing with spec1")
@@ -110,7 +110,7 @@ var _ = Describe("Node tests", func() {
 			Expect(outNode.Spec).To(Equal(spec2))
 
 			// Get a list of nodes.  This should not error.  Compare this
-			// against the expected results - there are only two entries
+			// against the expected results - there are only two nodeEntries
 			// so just use brute force comparison.
 			By("Listing all the nodes and comparing with expected")
 			nodeList, err := c.Nodes().List(api.NodeMetadata{})
@@ -157,81 +157,76 @@ var _ = Describe("Node tests", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(len(nodeList.Items)).To(Equal(0))
 		},
+		testutils.EnhanceWithConfigs(
+			// Test 1: One IPv4 and one IPv6 nodespecs.  One with ASNumber, one without.
+			Entry("Two fully populated NodeSpecs",
+				api.NodeMetadata{Name: "node1"},
+				api.NodeMetadata{Name: "node2"},
+				api.NodeSpec{
+					BGP: &api.NodeBGPSpec{
+						IPv4Address: &ipv4,
+					},
+				},
+				api.NodeSpec{
+					BGP: &api.NodeBGPSpec{
+						IPv6Address: &ipv6,
+						ASNumber:    &asn,
+					},
+				}),
 
-		// Test 1: One IPv4 and one IPv6 nodespecs.  One with ASNumber, one without.
-		Entry("Two fully populated NodeSpecs",
-			api.NodeMetadata{Name: "node1"},
-			api.NodeMetadata{Name: "node2"},
-			api.NodeSpec{
-				BGP: &api.NodeBGPSpec{
-					IPv4Address: &ipv4,
-				},
-			},
-			api.NodeSpec{
-				BGP: &api.NodeBGPSpec{
-					IPv6Address: &ipv6,
-					ASNumber:    &asn,
-				},
-			}),
-
-		// Test 2: BGP IPv4 and 6, and no BGP.
-		Entry("Two fully populated NodeSpecs",
-			api.NodeMetadata{Name: "node1"},
-			api.NodeMetadata{Name: "node2"},
-			api.NodeSpec{},
-			api.NodeSpec{
-				BGP: &api.NodeBGPSpec{
-					IPv4Address: &ipv4,
-					IPv6Address: &ipv6,
-					ASNumber:    &asn,
-				},
-			}),
+			// Test 2: BGP IPv4 and 6, and no BGP.
+			Entry("Two fully populated NodeSpecs",
+				api.NodeMetadata{Name: "node1"},
+				api.NodeMetadata{Name: "node2"},
+				api.NodeSpec{},
+				api.NodeSpec{
+					BGP: &api.NodeBGPSpec{
+						IPv4Address: &ipv4,
+						IPv6Address: &ipv6,
+						ASNumber:    &asn,
+					},
+				}),
+		)...,
 	)
 
-	Describe("Checking global config is set only once", func() {
-		testutils.CleanBackend(configFileName)
-		c, _ := testutils.NewClient(configFileName)
-		var guidOrig string
-		var guidNew string
-		var set bool
-		var err error
+	DescribeTable("Checking global config is set only once",
+		func(config *api.CalicoAPIConfig) {
+			testutils.CleanBackend(config)
+			c, _ := testutils.NewClient(config)
+			var guidOrig string
+			var guidNew string
+			var set bool
+			var err error
 
-		// Step-1: Create node 1.
-		Context("Create node1", func() {
-			_, err = c.Nodes().Create(&api.Node{
-				Metadata: api.NodeMetadata{Name: "node1"},
-				Spec:     api.NodeSpec{},
-			})
-			It("should create the node", func() {
-				Expect(err).NotTo(HaveOccurred())
-			})
+			// Step-1: Create node 1.
+			Context("Create node1", func() {
+				_, err = c.Nodes().Create(&api.Node{
+					Metadata: api.NodeMetadata{Name: "node1"},
+					Spec:     api.NodeSpec{},
+				})
+				Expect(err).NotTo(HaveOccurred(), "should create the node")
 
-			It("should create the global GUID", func() {
 				guidOrig, set, err = c.Config().GetFelixConfig("ClusterGUID", "")
-				Expect(err).NotTo(HaveOccurred())
-				Expect(set).To(BeTrue())
-				Expect(guidOrig).NotTo(Equal(""))
-			})
-		})
-
-		// Step-2: Create node 2.
-		Context("Create node 2", func() {
-			_, err = c.Nodes().Create(&api.Node{
-				Metadata: api.NodeMetadata{Name: "node2"},
-				Spec:     api.NodeSpec{},
-			})
-			It("should create the node", func() {
-				Expect(err).NotTo(HaveOccurred())
+				Expect(err).NotTo(HaveOccurred(), "should create the global GUID")
+				Expect(set).To(BeTrue(), "should create the global GUID")
+				Expect(guidOrig).NotTo(Equal(""), "should create the global GUID")
 			})
 
-			It("should not change the global GUID", func() {
+			// Step-2: Create node 2.
+			Context("Create node 2", func() {
+				_, err = c.Nodes().Create(&api.Node{
+					Metadata: api.NodeMetadata{Name: "node2"},
+					Spec:     api.NodeSpec{},
+				})
+				Expect(err).NotTo(HaveOccurred(), "should create the node")
+
 				guidNew, set, err = c.Config().GetFelixConfig("ClusterGUID", "")
-				Expect(err).NotTo(HaveOccurred())
-				Expect(set).To(BeTrue())
-				Expect(guidNew).NotTo(Equal(""))
-				Expect(guidNew).To(Equal(guidOrig))
+				Expect(err).NotTo(HaveOccurred(), "should not change the global GUID")
+				Expect(set).To(BeTrue(), "should not change the global GUID")
+				Expect(guidNew).NotTo(Equal(""), "should not change the global GUID")
+				Expect(guidNew).To(Equal(guidOrig), "should not change the global GUID")
 			})
-		})
-	})
-
+		},
+		testutils.GetEmptyEntriesWithConfigs()...,
+	)
 })

@@ -20,13 +20,15 @@ import (
 	"log"
 	"os/exec"
 
+	. "github.com/onsi/ginkgo/extensions/table"
 	"github.com/projectcalico/libcalico-go/lib/api"
 	"github.com/projectcalico/libcalico-go/lib/client"
 )
 
 // CleanBackend is a utility function to wipe clean "/calico" recursively from backend.
-func CleanBackend(configFileName string) {
-	config, err := client.LoadClientConfig(configFileName)
+func CleanBackend(config *api.CalicoAPIConfig) {
+	var err error
+
 	switch config.Spec.DatastoreType {
 	case api.EtcdV2:
 		err = exec.Command("etcdctl", "rm", "/calico", "--recursive").Run()
@@ -42,9 +44,10 @@ func CleanBackend(configFileName string) {
 }
 
 // DumpBackend prints out a recursive dump of the contents of backend.
-func DumpBackend(configFileName string) {
-	config, err := client.LoadClientConfig(configFileName)
+func DumpBackend(config *api.CalicoAPIConfig) {
 	var output []byte
+	var err error
+
 	switch config.Spec.DatastoreType {
 	case api.EtcdV2:
 		output, err = exec.Command("curl", "http://127.0.0.1:2379/v2/keys?recursive=true").Output()
@@ -59,4 +62,41 @@ func DumpBackend(configFileName string) {
 	} else {
 		log.Println(string(output))
 	}
+}
+
+func getConfigFileNames() []string {
+	return []string{
+		"",
+	}
+}
+
+func GetEmptyEntriesWithConfigs() []TableEntry {
+	return EnhanceWithConfigs(Entry(""))
+}
+
+func EnhanceWithConfigs(entries ...TableEntry) []TableEntry {
+	result := []TableEntry{}
+
+	for _, configFileName := range getConfigFileNames() {
+		config, err := client.LoadClientConfig(configFileName)
+		if err != nil {
+			log.Println(err)
+		}
+
+		for _, entry := range entries {
+			var description string
+			if entry.Description == "" {
+				description = fmt.Sprintf("%s", config.Spec.DatastoreType)
+			} else {
+				description = fmt.Sprintf("%s: %s", config.Spec.DatastoreType, entry.Description)
+			}
+			result = append(result, TableEntry{
+				Description: description,
+				Focused:     entry.Focused,
+				Parameters:  append(entry.Parameters, config),
+				Pending:     entry.Pending,
+			})
+		}
+	}
+	return result
 }

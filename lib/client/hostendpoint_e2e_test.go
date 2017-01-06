@@ -51,13 +51,13 @@ import (
 var _ = Describe("HostEndpoint tests", func() {
 
 	DescribeTable("HostEndpoint e2e tests",
-		func(meta1, meta2 api.HostEndpointMetadata, spec1, spec2 api.HostEndpointSpec) {
+		func(meta1, meta2 api.HostEndpointMetadata, spec1, spec2 api.HostEndpointSpec, config *api.CalicoAPIConfig) {
 
-			// Erase etcd clean.
-			testutils.CleanBackend(configFileName)
+			// Erase backend clean.
+			testutils.CleanBackend(config)
 
 			// Create a new client.
-			c, err := testutils.NewClient(configFileName)
+			c, err := testutils.NewClient(config)
 			if err != nil {
 				log.Println("Error creating client:", err)
 			}
@@ -170,108 +170,109 @@ var _ = Describe("HostEndpoint tests", func() {
 			Expect(hostEndpointList.Items).To(Equal(*emptyhostEndpointList))
 
 		},
+		testutils.EnhanceWithConfigs(
+			// Test 1: Pass two fully populated HostEndpointSpecs and expect the series of operations to succeed.
+			Entry("Two fully populated HostEndpointSpecs",
+				api.HostEndpointMetadata{
+					Name: "host1",
+					Node: "node1",
+					Labels: map[string]string{
+						"app":  "app-abc",
+						"prod": "no",
+					}},
+				api.HostEndpointMetadata{
+					Name: "host2",
+					Node: "node2",
+					Labels: map[string]string{
+						"app":  "app-xyz",
+						"prod": "yes",
+					}},
+				api.HostEndpointSpec{
+					InterfaceName: "eth0",
+					ExpectedIPs:   []cnet.IP{testutils.MustParseIP("10.0.0.0"), testutils.MustParseIP("20.0.0.0")},
+					Profiles:      []string{"profile1", "profile2"},
+				},
+				api.HostEndpointSpec{
+					InterfaceName: "eth1",
+					ExpectedIPs:   []cnet.IP{testutils.MustParseIP("192.168.0.0"), testutils.MustParseIP("192.168.1.1")},
+					Profiles:      []string{"profile3", "profile4"},
+				}),
 
-		// Test 1: Pass two fully populated HostEndpointSpecs and expect the series of operations to succeed.
-		Entry("Two fully populated HostEndpointSpecs",
-			api.HostEndpointMetadata{
-				Name: "host1",
-				Node: "node1",
-				Labels: map[string]string{
-					"app":  "app-abc",
-					"prod": "no",
-				}},
-			api.HostEndpointMetadata{
-				Name: "host2",
-				Node: "node2",
-				Labels: map[string]string{
-					"app":  "app-xyz",
-					"prod": "yes",
-				}},
-			api.HostEndpointSpec{
-				InterfaceName: "eth0",
-				ExpectedIPs:   []cnet.IP{testutils.MustParseIP("10.0.0.0"), testutils.MustParseIP("20.0.0.0")},
-				Profiles:      []string{"profile1", "profile2"},
-			},
-			api.HostEndpointSpec{
-				InterfaceName: "eth1",
-				ExpectedIPs:   []cnet.IP{testutils.MustParseIP("192.168.0.0"), testutils.MustParseIP("192.168.1.1")},
-				Profiles:      []string{"profile3", "profile4"},
-			}),
+			// Test 2: Pass one partially populated HostEndpointSpec and another fully populated HostEndpointSpec and expect the series of operations to succeed.
+			Entry("One partially populated HostEndpointSpec and another fully populated HostEndpointSpec",
+				api.HostEndpointMetadata{
+					Name: "host1",
+					Node: "node1",
+					Labels: map[string]string{
+						"app":  "app-abc",
+						"prod": "no",
+					}},
+				api.HostEndpointMetadata{
+					Name: "host2",
+					Node: "node2",
+					Labels: map[string]string{
+						"app":  "app-xyz",
+						"prod": "yes",
+					}},
+				api.HostEndpointSpec{
+					InterfaceName: "eth0",
+				},
+				api.HostEndpointSpec{
+					InterfaceName: "eth1",
+					ExpectedIPs:   []cnet.IP{testutils.MustParseIP("192.168.0.0"), testutils.MustParseIP("192.168.1.1")},
+					Profiles:      []string{"profile3", "profile4"},
+				}),
 
-		// Test 2: Pass one partially populated HostEndpointSpec and another fully populated HostEndpointSpec and expect the series of operations to succeed.
-		Entry("One partially populated HostEndpointSpec and another fully populated HostEndpointSpec",
-			api.HostEndpointMetadata{
-				Name: "host1",
-				Node: "node1",
-				Labels: map[string]string{
-					"app":  "app-abc",
-					"prod": "no",
-				}},
-			api.HostEndpointMetadata{
-				Name: "host2",
-				Node: "node2",
-				Labels: map[string]string{
-					"app":  "app-xyz",
-					"prod": "yes",
-				}},
-			api.HostEndpointSpec{
-				InterfaceName: "eth0",
-			},
-			api.HostEndpointSpec{
-				InterfaceName: "eth1",
-				ExpectedIPs:   []cnet.IP{testutils.MustParseIP("192.168.0.0"), testutils.MustParseIP("192.168.1.1")},
-				Profiles:      []string{"profile3", "profile4"},
-			}),
+			// Test 3: Pass one fully populated HostEndpointSpec and another empty HostEndpointSpec and expect the series of operations to succeed.
+			Entry("One fully populated HostEndpointSpec and another empty HostEndpointSpec",
+				api.HostEndpointMetadata{
+					Name: "host1",
+					Node: "node1",
+					Labels: map[string]string{
+						"app":  "app-abc",
+						"prod": "no",
+					}},
+				api.HostEndpointMetadata{
+					Name: "host2",
+					Node: "node2",
+					Labels: map[string]string{
+						"app":  "app-xyz",
+						"prod": "yes",
+					}},
+				api.HostEndpointSpec{
+					InterfaceName: "eth0",
+					ExpectedIPs:   []cnet.IP{testutils.MustParseIP("10.0.0.0"), testutils.MustParseIP("20.0.0.0")},
+					Profiles:      []string{"profile1", "profile2"},
+				},
+				api.HostEndpointSpec{}),
 
-		// Test 3: Pass one fully populated HostEndpointSpec and another empty HostEndpointSpec and expect the series of operations to succeed.
-		Entry("One fully populated HostEndpointSpec and another empty HostEndpointSpec",
-			api.HostEndpointMetadata{
-				Name: "host1",
-				Node: "node1",
-				Labels: map[string]string{
-					"app":  "app-abc",
-					"prod": "no",
-				}},
-			api.HostEndpointMetadata{
-				Name: "host2",
-				Node: "node2",
-				Labels: map[string]string{
-					"app":  "app-xyz",
-					"prod": "yes",
-				}},
-			api.HostEndpointSpec{
-				InterfaceName: "eth0",
-				ExpectedIPs:   []cnet.IP{testutils.MustParseIP("10.0.0.0"), testutils.MustParseIP("20.0.0.0")},
-				Profiles:      []string{"profile1", "profile2"},
-			},
-			api.HostEndpointSpec{}),
-
-		// Test 4: Pass two fully populated HostEndpointSpecs with two HostEndpointMetadata (one IPv4 and another IPv6) and expect the series of operations to succeed.
-		Entry("Two fully populated HostEndpointSpecs with two HostEndpointMetadata (one IPv4 and another IPv6)",
-			api.HostEndpointMetadata{
-				Name: "host1",
-				Node: "node1",
-				Labels: map[string]string{
-					"app":  "app-abc",
-					"prod": "no",
-				}},
-			api.HostEndpointMetadata{
-				Name: "host2",
-				Node: "node2",
-				Labels: map[string]string{
-					"app":  "app-xyz",
-					"prod": "yes",
-				}},
-			api.HostEndpointSpec{
-				InterfaceName: "eth0",
-				ExpectedIPs:   []cnet.IP{testutils.MustParseIP("10.0.0.0"), testutils.MustParseIP("192.168.1.1")},
-				Profiles:      []string{"profile1", "profile2"},
-			},
-			api.HostEndpointSpec{
-				InterfaceName: "eth1",
-				ExpectedIPs:   []cnet.IP{testutils.MustParseIP("fe80::00"), testutils.MustParseIP("fe80::33")},
-				Profiles:      []string{"profile3", "profile4"},
-			}),
+			// Test 4: Pass two fully populated HostEndpointSpecs with two HostEndpointMetadata (one IPv4 and another IPv6) and expect the series of operations to succeed.
+			Entry("Two fully populated HostEndpointSpecs with two HostEndpointMetadata (one IPv4 and another IPv6)",
+				api.HostEndpointMetadata{
+					Name: "host1",
+					Node: "node1",
+					Labels: map[string]string{
+						"app":  "app-abc",
+						"prod": "no",
+					}},
+				api.HostEndpointMetadata{
+					Name: "host2",
+					Node: "node2",
+					Labels: map[string]string{
+						"app":  "app-xyz",
+						"prod": "yes",
+					}},
+				api.HostEndpointSpec{
+					InterfaceName: "eth0",
+					ExpectedIPs:   []cnet.IP{testutils.MustParseIP("10.0.0.0"), testutils.MustParseIP("192.168.1.1")},
+					Profiles:      []string{"profile1", "profile2"},
+				},
+				api.HostEndpointSpec{
+					InterfaceName: "eth1",
+					ExpectedIPs:   []cnet.IP{testutils.MustParseIP("fe80::00"), testutils.MustParseIP("fe80::33")},
+					Profiles:      []string{"profile3", "profile4"},
+				}),
+		)...,
 	)
 
 })
