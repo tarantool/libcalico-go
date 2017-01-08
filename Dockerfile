@@ -5,7 +5,7 @@ MAINTAINER Casey Davenport <casey@tigera.io>
 # Install libc (to run calicoctl) and various build tools to build the vendored packages.
 ENV GLIBC_VERSION 2.23-r1
 RUN apk add --update bash git iproute2 curl make gcc alpine-sdk linux-headers && \
-  apk add --update-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing etcd && \
+  apk add --update-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing etcd consul && \
   curl -o glibc.apk -L "https://github.com/andyshinn/alpine-pkg-glibc/releases/download/${GLIBC_VERSION}/glibc-${GLIBC_VERSION}.apk" && \
   apk add --allow-untrusted glibc.apk && \
   curl -o glibc-bin.apk -L "https://github.com/andyshinn/alpine-pkg-glibc/releases/download/${GLIBC_VERSION}/glibc-bin-${GLIBC_VERSION}.apk" && \

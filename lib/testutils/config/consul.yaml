@@ -1,0 +1,7 @@
+kind: calicoApiConfig
+apiVersion: v1
+metadata:
+spec:
+  datastoreType: "consul"
+  consulScheme: "http"
+  consulAddress: "127.0.0.1:8500"

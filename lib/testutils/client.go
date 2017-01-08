@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Tigera, Inc. All rights reserved.
+// Copyright (c) 2016-2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ import (
 	"log"
 	"net"
 
+	"fmt"
 	"github.com/projectcalico/libcalico-go/lib/api"
 	"github.com/projectcalico/libcalico-go/lib/api/unversioned"
 	"github.com/projectcalico/libcalico-go/lib/client"
@@ -27,6 +28,7 @@ import (
 // NewClient is a util function to create a new default client.
 // When passed empty string, it loads the default config instead from a config file.
 func NewClient(cfg *api.CalicoAPIConfig) (*client.Client, error) {
+	log.Println(fmt.Sprintf("Getting new client with datastore: %v", cfg.Spec.DatastoreType))
 	c, err := client.New(*cfg)
 	if err != nil {
 		return nil, err

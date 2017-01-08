@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Tigera, Inc. All rights reserved.
+// Copyright (c) 2016-2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import (
 )
 
 var _ = Describe("Backend tests", func() {
-	DescribeTable("etcd GET/List Revision values",
+	DescribeTable("GET/List Revision values",
 		func(config *api.CalicoAPIConfig) {
 			testutils.CleanBackend(config)
 

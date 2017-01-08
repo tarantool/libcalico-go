@@ -30,7 +30,7 @@ test-containerized: $(BUILD_CONTAINER_MARKER) run-kubernetes-master
 	$(BUILD_CONTAINER_NAME) bash -c 'make WHAT=$(WHAT) SKIP=$(SKIP) ut && chown $(shell id -u):$(shell id -g) -R ./vendor'
 
 .PHONY: test-containerized-mac-docker
-## Run the tests in a conteiner without k8s. https://github.com/vyshane/kid/issues/14
+## Run the tests in a container without k8s. https://github.com/vyshane/kid/issues/14
 test-containerized-mac-docker: $(BUILD_CONTAINER_MARKER) run-consul
 	docker run --rm --privileged --net=host \
 	-e PLUGIN=calico \
@@ -59,8 +59,8 @@ run-etcd:
 run-consul: run-etcd
 	-docker rm -f calico-consul
 	docker run --detach \
-		--net=host \
-		--name calico-consul consul:0.7.2
+	    --net=host \
+	    --name calico-consul consul:0.7.2
 
 run-kubernetes-master: stop-kubernetes-master run-consul
 	# Run the kubelet which will launch the master components in a pod.

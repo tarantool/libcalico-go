@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Tigera, Inc. All rights reserved.
+// Copyright (c) 2016-2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,11 +29,14 @@ import (
 func CleanBackend(config *api.CalicoAPIConfig) {
 	var err error
 
+	log.Println(fmt.Sprintf("Cleaning datastore: %v", config.Spec.DatastoreType))
+
 	switch config.Spec.DatastoreType {
 	case api.EtcdV2:
 		err = exec.Command("etcdctl", "rm", "/calico", "--recursive").Run()
-	case api.Kubernetes:
 	case api.Consul:
+		err = exec.Command("consul", "kv", "delete", "-recurse", "calico").Run()
+	case api.Kubernetes:
 	default:
 		err = errors.New(fmt.Sprintf("Unknown datastore type: %v", config.Spec.DatastoreType))
 	}
@@ -48,11 +51,14 @@ func DumpBackend(config *api.CalicoAPIConfig) {
 	var output []byte
 	var err error
 
+	log.Println(fmt.Sprintf("Dumping datastore: %v", config.Spec.DatastoreType))
+
 	switch config.Spec.DatastoreType {
 	case api.EtcdV2:
 		output, err = exec.Command("curl", "http://127.0.0.1:2379/v2/keys?recursive=true").Output()
-	case api.Kubernetes:
 	case api.Consul:
+		output, err = exec.Command("consul", "kv", "get", "-recursive", "calico").Output()
+	case api.Kubernetes:
 	default:
 		err = errors.New(fmt.Sprintf("Unknown datastore type: %v", config.Spec.DatastoreType))
 	}
@@ -65,8 +71,9 @@ func DumpBackend(config *api.CalicoAPIConfig) {
 }
 
 func getConfigFileNames() []string {
+	// this is bad, I know. Suggestions are welcome
 	return []string{
-		"",
+		"../testutils/config/consul.yaml",
 	}
 }
 

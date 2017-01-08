@@ -1,4 +1,4 @@
-// Copyright (c) 2016 Tigera, Inc. All rights reserved.
+// Copyright (c) 2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,11 +19,14 @@ import (
 
 	"time"
 
+	"bytes"
+	"fmt"
 	log "github.com/Sirupsen/logrus"
 	consulapi "github.com/hashicorp/consul/api"
 	"github.com/projectcalico/libcalico-go/lib/backend/api"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
 	"github.com/projectcalico/libcalico-go/lib/errors"
+	"strings"
 )
 
 var (
@@ -132,7 +135,7 @@ func (c *ClientWrapper) Apply(d *model.KVPair) (*model.KVPair, error) {
 
 // Delete an entry in the datastore.  This errors if the entry does not exists.
 func (c *ClientWrapper) Delete(d *model.KVPair) error {
-	key, err := model.KeyToDefaultDeletePath(d.Key)
+	key, err := keyToDefaultDeletePath(d.Key)
 	if err != nil {
 		return err
 	}
@@ -144,7 +147,7 @@ func (c *ClientWrapper) Delete(d *model.KVPair) error {
 
 	kv := c.Client.KV()
 
-	readyKey, err := model.KeyToDefaultPath(model.ReadyFlagKey{})
+	readyKey, err := keyToDefaultPath(model.ReadyFlagKey{})
 	if err != nil {
 		return err
 	}
@@ -164,7 +167,8 @@ func (c *ClientWrapper) Delete(d *model.KVPair) error {
 
 	// If there are parents to be deleted, delete these as well provided there
 	// are no more children.
-	parents, err := model.KeyToDefaultDeleteParentPaths(d.Key)
+	// TODO: investigate if we need to do it in consul
+	parents, err := keyToDefaultDeleteParentPaths(d.Key)
 	if err != nil {
 		return err
 	}
@@ -183,22 +187,33 @@ func (c *ClientWrapper) Delete(d *model.KVPair) error {
 
 // Get an entry from the datastore.  This errors if the entry does not exist.
 func (c *ClientWrapper) Get(k model.Key) (*model.KVPair, error) {
-	key, err := model.KeyToDefaultPath(k)
+	key, err := keyToDefaultPath(k)
 	if err != nil {
 		return nil, err
 	}
 	log.Debugf("Get Key: %s", key)
-	r, _, err := c.Client.KV().Get(key, &consulapi.QueryOptions{RequireConsistent: true})
+	r, meta, err := c.Client.KV().Get(key, nil)
 	if err != nil {
 		return nil, convertConsulError(err, k)
 	}
 
-	v, err := model.ParseValue(k, r.Value)
-	if err != nil {
-		return nil, err
+	index := meta.LastIndex
+	var value interface{}
+
+	if r != nil {
+		index = r.ModifyIndex
+		log.Debugf("Get Key: %s, %s, %v", key, k, r.Value)
+		value, err = model.ParseValue(k, r.Value)
+		if err != nil {
+			log.WithError(err).Debug("Convertation failed")
+			return nil, err
+		}
+
+		return &model.KVPair{Key: k, Value: value, Revision: index}, nil
 	}
 
-	return &model.KVPair{Key: k, Value: v, Revision: r.ModifyIndex}, nil
+	log.Debugf("Get Key return nil: %s", key)
+	return nil, errors.ErrorResourceDoesNotExist{Err: err, Identifier: key}
 }
 
 // List entries in the datastore.  This may return an empty list of there are
@@ -253,7 +268,7 @@ func filterConsulList(pairs *consulapi.KVPairs, l model.ListInterface) []*model.
 	kvs := []*model.KVPair{}
 
 	for _, x := range *pairs {
-		key := l.KeyFromDefaultPath(x.Key)
+		key := keyFromDefaultPath(x.Key)
 		if key == nil {
 			continue
 		}
@@ -276,7 +291,7 @@ func (c *ClientWrapper) set(d *model.KVPair, options *setOptions) (*model.KVPair
 		"ttl":   d.TTL,
 		"rev":   d.Revision,
 	})
-	key, err := model.KeyToDefaultPath(d.Key)
+	key, err := keyToDefaultPath(d.Key)
 	if err != nil {
 		logCxt.WithError(err).Error("Failed to convert key to path")
 		return nil, err
@@ -292,7 +307,12 @@ func (c *ClientWrapper) set(d *model.KVPair, options *setOptions) (*model.KVPair
 		// Implement it via sessions & TTL
 		return nil, goerrors.New("Consul does not support TTL")
 	}
-	logCxt.WithField("options", options).Debug("Setting KV in consulapi")
+
+	fields := map[string]interface{}{
+		"options": options,
+		"key":     key,
+	}
+	logCxt.WithFields(fields).Info("Setting KV in consulapi")
 
 	ops := consulapi.KVTxnOps{}
 	switch options.Kind {
@@ -301,7 +321,7 @@ func (c *ClientWrapper) set(d *model.KVPair, options *setOptions) (*model.KVPair
 			Key:   key,
 			Verb:  consulapi.KVCAS,
 			Value: bytes,
-			Index: 0,
+			Index: options.Index,
 		})
 		break
 	case update:
@@ -361,12 +381,20 @@ func (c *ClientWrapper) set(d *model.KVPair, options *setOptions) (*model.KVPair
 
 	return d, nil
 }
+
 func createError(errors consulapi.TxnErrors) error {
 	if errors == nil {
 		return nil
 	}
 
-	return goerrors.New("some errors in consul")
+	var buffer bytes.Buffer
+
+	buffer.WriteString("Some errors in consul:\n")
+	for _, x := range errors {
+		buffer.WriteString(fmt.Sprintf("\t[%d]: %s\n", x.OpIndex, x.What))
+	}
+
+	return goerrors.New(buffer.String())
 }
 
 func convertConsulError(err error, key model.Key) error {
@@ -429,7 +457,7 @@ func (c *ClientWrapper) listHostMetadata(l model.HostMetadataListOptions) ([]*mo
 	log.Debug("Parse host directories.")
 	kvs := []*model.KVPair{}
 	for _, n := range results {
-		k := l.KeyFromDefaultPath(n.Key + "/metadata")
+		k := keyFromDefaultPath(n.Key + "/metadata")
 		if k != nil {
 			kvs = append(kvs, &model.KVPair{
 				Key:   k,
@@ -438,4 +466,31 @@ func (c *ClientWrapper) listHostMetadata(l model.HostMetadataListOptions) ([]*mo
 		}
 	}
 	return kvs, nil
+}
+
+func trimSlashForConsul(path string) string {
+	return strings.TrimLeft(path, "/")
+}
+
+func keyToDefaultPath(key model.Key) (string, error) {
+	path, err := model.KeyToDefaultPath(key)
+	return trimSlashForConsul(path), err
+}
+
+func keyToDefaultDeletePath(key model.Key) (string, error) {
+	path, err := model.KeyToDefaultDeletePath(key)
+	return trimSlashForConsul(path), err
+}
+
+func keyToDefaultDeleteParentPaths(key model.Key) ([]string, error) {
+	paths, err := model.KeyToDefaultDeleteParentPaths(key)
+	for i := 0; i < len(paths); i++ {
+		paths[i] = trimSlashForConsul(paths[i])
+	}
+
+	return paths, err
+}
+
+func keyFromDefaultPath(path string) model.Key {
+	return model.KeyFromDefaultPath("/" + path)
 }
