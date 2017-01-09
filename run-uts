@@ -12,6 +12,7 @@ fi
 # Run tests in random order find tests recursively (-r).
 echo WHAT: $WHAT
 echo SKIP: $SKIP
+echo CONFIG_PATH: $CONFIG_PATH
 ginkgo -cover -r --skipPackage $SKIP $WHAT
 
 echo

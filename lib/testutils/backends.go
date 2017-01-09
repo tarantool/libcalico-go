@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/extensions/table"
 	"github.com/projectcalico/libcalico-go/lib/api"
 	"github.com/projectcalico/libcalico-go/lib/client"
+	"os"
 )
 
 // CleanBackend is a utility function to wipe clean "/calico" recursively from backend.
@@ -71,8 +72,17 @@ func DumpBackend(config *api.CalicoAPIConfig) {
 }
 
 func getConfigFileNames() []string {
+	envFromConfig := os.Getenv("CONFIG_PATH")
+
+	if envFromConfig != "" {
+		return []string{
+			envFromConfig,
+		}
+	}
+
 	// this is bad, I know. Suggestions are welcome
 	return []string{
+		"",
 		"../testutils/config/consul.yaml",
 	}
 }

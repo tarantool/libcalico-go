@@ -26,11 +26,13 @@ import (
 	"github.com/projectcalico/libcalico-go/lib/backend/api"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
 	"github.com/projectcalico/libcalico-go/lib/errors"
+	"regexp"
 	"strings"
 )
 
 var (
-	watchTimeout = 30 * time.Second
+	watchTimeout      = 30 * time.Second
+	indexIsStaleError = regexp.MustCompile("failed to set key \"(.*)\", index is stale")
 )
 
 type ConsulConfig struct {
@@ -44,6 +46,12 @@ type ConsulConfig struct {
 
 type ClientWrapper struct {
 	Client *consulapi.Client
+}
+
+type txnError struct {
+	ConsulError  *consulapi.TxnError
+	ConsulOp     *consulapi.KVTxnOp
+	DefaultError error
 }
 
 type setOperationKind int
@@ -84,15 +92,18 @@ func NewConsulClient(config *ConsulConfig) (*ClientWrapper, error) {
 	return &ClientWrapper{Client: client}, nil
 }
 
+func getReadyFlagPair() *model.KVPair {
+	return &model.KVPair{
+		Key:   model.ReadyFlagKey{},
+		Value: true,
+	}
+}
+
 // EnsureInitialized makes sure that the etcd data is initialized for use by
 // Calico.
 func (c *ClientWrapper) EnsureInitialized() error {
 	// Make sure the Ready flag is initialized in the datastore
-	kv := &model.KVPair{
-		Key:   model.ReadyFlagKey{},
-		Value: true,
-	}
-	if _, err := c.Create(kv); err == nil {
+	if _, err := c.Create(getReadyFlagPair()); err == nil {
 		log.Info("Ready flag is now set")
 	} else {
 		if _, ok := err.(errors.ErrorResourceAlreadyExists); !ok {
@@ -135,34 +146,37 @@ func (c *ClientWrapper) Apply(d *model.KVPair) (*model.KVPair, error) {
 
 // Delete an entry in the datastore.  This errors if the entry does not exists.
 func (c *ClientWrapper) Delete(d *model.KVPair) error {
-	key, err := keyToDefaultDeletePath(d.Key)
+	path, err := keyToDefaultDeletePath(d.Key)
 	if err != nil {
 		return err
 	}
-	deleteOp := &consulapi.KVTxnOp{Key: key}
+	deleteOp := &consulapi.KVTxnOp{Key: path, Verb: consulapi.KVDeleteTree}
 	if d.Revision != nil {
 		deleteOp.Index = d.Revision.(uint64)
 	}
-	log.Debugf("Delete Key: %s", key)
+	log.Debugf("Delete Key: %s", path)
 
 	kv := c.Client.KV()
 
-	readyKey, err := keyToDefaultPath(model.ReadyFlagKey{})
+	readyFlagPair := getReadyFlagPair()
+	readyPath, err := keyToDefaultPath(readyFlagPair.Key)
 	if err != nil {
 		return err
 	}
-	updateReadyOp := &consulapi.KVTxnOp{Key: readyKey}
-	ok, response, _, err := kv.Txn(consulapi.KVTxnOps{deleteOp, updateReadyOp}, nil)
+
+	serializedValue, err := model.SerializeValue(readyFlagPair)
+	if err != nil {
+		return err
+	}
+	updateReadyOp := &consulapi.KVTxnOp{Key: readyPath, Value: serializedValue, Verb: consulapi.KVSet}
+	ops := consulapi.KVTxnOps{deleteOp, updateReadyOp}
+	ok, response, _, err := kv.Txn(ops, nil)
 	if err != nil {
 		return convertConsulError(err, d.Key)
 	}
 
-	if !ok {
-		return goerrors.New("Delete fails, transaction rollbacked")
-	}
-
-	if len(response.Errors) > 0 {
-		return createError(response.Errors)
+	if !ok || len(response.Errors) > 0 {
+		return convertArrayOfErrorsToError(convertTxnErrors(d.Key, ops, response.Errors))
 	}
 
 	// If there are parents to be deleted, delete these as well provided there
@@ -187,12 +201,12 @@ func (c *ClientWrapper) Delete(d *model.KVPair) error {
 
 // Get an entry from the datastore.  This errors if the entry does not exist.
 func (c *ClientWrapper) Get(k model.Key) (*model.KVPair, error) {
-	key, err := keyToDefaultPath(k)
+	path, err := keyToDefaultPath(k)
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Get Key: %s", key)
-	r, meta, err := c.Client.KV().Get(key, nil)
+	log.Debugf("Get Key: %s", path)
+	r, meta, err := c.Client.KV().Get(path, nil)
 	if err != nil {
 		return nil, convertConsulError(err, k)
 	}
@@ -202,7 +216,7 @@ func (c *ClientWrapper) Get(k model.Key) (*model.KVPair, error) {
 
 	if r != nil {
 		index = r.ModifyIndex
-		log.Debugf("Get Key: %s, %s, %v", key, k, r.Value)
+		log.Debugf("Get Key: %s, %s, %v", path, k, r.Value)
 		value, err = model.ParseValue(k, r.Value)
 		if err != nil {
 			log.WithError(err).Debug("Convertation failed")
@@ -212,8 +226,8 @@ func (c *ClientWrapper) Get(k model.Key) (*model.KVPair, error) {
 		return &model.KVPair{Key: k, Value: value, Revision: index}, nil
 	}
 
-	log.Debugf("Get Key return nil: %s", key)
-	return nil, errors.ErrorResourceDoesNotExist{Err: err, Identifier: key}
+	log.Debugf("Key not found error %s", path)
+	return nil, errors.ErrorResourceDoesNotExist{Err: err, Identifier: k}
 }
 
 // List entries in the datastore.  This may return an empty list of there are
@@ -236,7 +250,7 @@ func (c *ClientWrapper) List(l model.ListInterface) ([]*model.KVPair, error) {
 func (c *ClientWrapper) defaultList(l model.ListInterface) ([]*model.KVPair, error) {
 	// To list entries, we enumerate from the common root based on the supplied
 	// IDs, and then filter the results.
-	key := model.ListOptionsToDefaultPathRoot(l)
+	key := listOptionsToDefaultPathRoot(l)
 	log.Debugf("List Key: %s", key)
 	kv := c.Client.KV()
 
@@ -268,7 +282,7 @@ func filterConsulList(pairs *consulapi.KVPairs, l model.ListInterface) []*model.
 	kvs := []*model.KVPair{}
 
 	for _, x := range *pairs {
-		key := keyFromDefaultPath(x.Key)
+		key := keyFromDefaultListPath(x.Key, l)
 		if key == nil {
 			continue
 		}
@@ -282,22 +296,23 @@ func filterConsulList(pairs *consulapi.KVPairs, l model.ListInterface) []*model.
 	return kvs
 }
 
-// Set an existing entry in the datastore.  This ignores whether an entry already
-// exists.
 func (c *ClientWrapper) set(d *model.KVPair, options *setOptions) (*model.KVPair, error) {
 	logCxt := log.WithFields(log.Fields{
-		"key":   d.Key,
-		"value": d.Value,
-		"ttl":   d.TTL,
-		"rev":   d.Revision,
+		"key":     d.Key,
+		"value":   d.Value,
+		"ttl":     d.TTL,
+		"rev":     d.Revision,
+		"options": options,
 	})
-	key, err := keyToDefaultPath(d.Key)
+	path, err := keyToDefaultPath(d.Key)
 	if err != nil {
 		logCxt.WithError(err).Error("Failed to convert key to path")
 		return nil, err
 	}
 
-	bytes, err := model.SerializeValue(d)
+	logCxt = logCxt.WithField("path", path)
+
+	serializedValue, err := model.SerializeValue(d)
 	if err != nil {
 		logCxt.WithError(err).Error("Failed to serialize value")
 		return nil, err
@@ -305,93 +320,176 @@ func (c *ClientWrapper) set(d *model.KVPair, options *setOptions) (*model.KVPair
 
 	if d.TTL != 0 {
 		// Implement it via sessions & TTL
-		return nil, goerrors.New("Consul does not support TTL")
+		return nil, errors.ErrorOperationNotSupported{
+			Operation:  fmt.Sprintf("%s with TTL", options.Kind),
+			Identifier: d.Key,
+		}
 	}
 
-	fields := map[string]interface{}{
-		"options": options,
-		"key":     key,
-	}
-	logCxt.WithFields(fields).Info("Setting KV in consulapi")
+	logCxt.Info("Setting KV in consulapi")
 
 	ops := consulapi.KVTxnOps{}
 	switch options.Kind {
 	case create:
 		ops = append(ops, &consulapi.KVTxnOp{
-			Key:   key,
+			Key:   path,
 			Verb:  consulapi.KVCAS,
-			Value: bytes,
-			Index: options.Index,
+			Value: serializedValue,
+			Index: 0,
 		})
 		break
 	case update:
+		// this get fails if there are no such key and will rollback whole transaction
 		ops = append(ops, &consulapi.KVTxnOp{
-			Key:   key,
-			Verb:  consulapi.KVCAS,
-			Value: bytes,
-			Index: options.Index,
+			Key:  path,
+			Verb: consulapi.KVGet,
 		})
+
+		if options.Index == 0 {
+			ops = append(ops, &consulapi.KVTxnOp{
+				Key:   path,
+				Verb:  consulapi.KVSet,
+				Value: serializedValue,
+			})
+		} else {
+			ops = append(ops, &consulapi.KVTxnOp{
+				Key:   path,
+				Verb:  consulapi.KVCAS,
+				Value: serializedValue,
+				Index: options.Index,
+			})
+		}
 		break
 	case replace:
 		ops = append(ops, &consulapi.KVTxnOp{
-			Key:   key,
+			Key:   path,
 			Verb:  consulapi.KVSet,
-			Value: bytes,
+			Value: serializedValue,
 		})
 		break
 	default:
 		log.WithField("kind", options.Kind).Error("Unsupported set operation")
-		return nil, goerrors.New("Unsupported set operation")
+		return nil, errors.ErrorOperationNotSupported{
+			Operation:  fmt.Sprintf("%s", options.Kind),
+			Identifier: d.Key,
+		}
 	}
-
-	ops = append(ops, &consulapi.KVTxnOp{
-		Key:  key,
-		Verb: consulapi.KVGet,
-	})
 
 	ok, response, _, err := c.Client.KV().Txn(ops, nil)
 
 	if err != nil {
 		// Log at debug because we don't know how serious this is.
 		// Caller should log if it's actually a problem.
-		logCxt.WithError(err).Debug("Set failed")
+		logCxt.WithError(err).Debug("Set failed, some errors")
 		return nil, convertConsulError(err, d.Key)
 	}
 
 	if !ok {
 		// this means that transaction was rolled back.
-		// Log at debug because we don't know how serious this is.
-		// Caller should log if it's actually a problem.
-		err = createError(response.Errors)
-		logCxt.WithError(err).Debug("Set failed")
+		// for consul this is the place for actual error detection
+		txnErrs := convertTxnErrors(d.Key, ops, response.Errors)
+		switch options.Kind {
+		case create:
+			err = convertToCreateError(d.Key, txnErrs)
+		case update:
+			err = convertToUpdateError(d.Key, txnErrs)
+		case replace:
+		default:
+			err = convertArrayOfErrorsToError(txnErrs)
+		}
+		logCxt.WithError(err).Debug("Set failed, transaction rollbacked")
 		return nil, err
 	}
 
 	// Datastore object will be identical except for the modified index.
-	logCxt.WithField("newRev", response.Results[1].ModifyIndex).Debug("Set succeeded")
+	result := response.Results[len(response.Results)-1]
+	logCxt.WithField("newRev", result.ModifyIndex).Debug("Set succeeded")
 
-	d.Revision = response.Results[1].ModifyIndex
-	d.Value, err = model.ParseValue(d.Key, response.Results[1].Value)
-	if err != nil {
-		// Log at debug because we don't know how serious this is.
-		// Caller should log if it's actually a problem.
-		logCxt.WithError(err).Debug("Can't parse value returned from consulapi")
-		return nil, convertConsulError(err, d.Key)
-	}
-
+	d.Revision = result.ModifyIndex
 	return d, nil
 }
 
-func createError(errors consulapi.TxnErrors) error {
-	if errors == nil {
+func convertToUpdateError(key model.Key, errs []txnError) error {
+	if errs == nil || len(errs) == 0 {
+		return nil
+	}
+
+	// let's check, maybe it's get error
+	for _, x := range errs {
+		if x.ConsulError.OpIndex == 0 {
+			return errors.ErrorResourceDoesNotExist{
+				Err:        goerrors.New(x.ConsulError.What),
+				Identifier: key,
+			}
+		}
+	}
+
+	// it is not a get error, so it should be CAS error or some unknown error.
+	return convertArrayOfErrorsToError(errs)
+}
+
+func convertToCreateError(key model.Key, errs []txnError) error {
+	if errs == nil || len(errs) == 0 {
+		return nil
+	}
+
+	if len(errs) > 1 {
+		return convertArrayOfErrorsToError(errs)
+	}
+
+	if _, ok := errs[0].DefaultError.(errors.ErrorResourceUpdateConflict); ok {
+		log.Debug("Node exists error")
+		return errors.ErrorResourceAlreadyExists{
+			Err:        goerrors.New(errs[0].ConsulError.What),
+			Identifier: key,
+		}
+	}
+
+	return errs[0].DefaultError
+}
+
+func convertTxnErrors(key model.Key, ops consulapi.KVTxnOps, txnErrors consulapi.TxnErrors) []txnError {
+	if txnErrors == nil || len(txnErrors) == 0 {
 		return nil
 	}
 
 	var buffer bytes.Buffer
+	result := make([]txnError, len(txnErrors))
 
 	buffer.WriteString("Some errors in consul:\n")
+	for i, x := range txnErrors {
+		result[i] = txnError{
+			ConsulError: x,
+			ConsulOp:    ops[i],
+		}
+		if matches := indexIsStaleError.FindStringSubmatch(x.What); matches != nil {
+			log.Debug("Index is stale")
+			result[i].DefaultError = errors.ErrorResourceUpdateConflict{
+				Identifier: key,
+			}
+		} else {
+			result[i].DefaultError = errors.ErrorDatastoreError{
+				Err:        goerrors.New(fmt.Sprintf("\t[%d]: %s\n", x.OpIndex, x.What)),
+				Identifier: key,
+			}
+		}
+	}
+
+	return result
+}
+
+func convertArrayOfErrorsToError(errors []txnError) error {
+	if errors == nil || len(errors) == 0 {
+		return nil
+	}
+
+	if len(errors) == 1 {
+		return errors[0].DefaultError
+	}
+
+	var buffer bytes.Buffer
 	for _, x := range errors {
-		buffer.WriteString(fmt.Sprintf("\t[%d]: %s\n", x.OpIndex, x.What))
+		buffer.WriteString(fmt.Sprintf("%v\n", x.DefaultError))
 	}
 
 	return goerrors.New(buffer.String())
@@ -436,7 +534,7 @@ func (c *ClientWrapper) listHostMetadata(l model.HostMetadataListOptions) ([]*mo
 	// No hostname specified, so enumerate the directories directly under
 	// the host tree, return no entries if the host directory does not exist.
 	log.Debug("Listing all host metadatas")
-	key := "/calico/v1/host"
+	key := "calico/v1/host"
 	kv := c.Client.KV()
 	results, _, err := kv.List(key, nil)
 	if err != nil {
@@ -456,8 +554,15 @@ func (c *ClientWrapper) listHostMetadata(l model.HostMetadataListOptions) ([]*mo
 	// may contain fields, we would need to perform a get.
 	log.Debug("Parse host directories.")
 	kvs := []*model.KVPair{}
-	for _, n := range results {
-		k := keyFromDefaultPath(n.Key + "/metadata")
+
+	logresults := []consulapi.KVPair{}
+	for _, x := range results {
+		logresults = append(logresults, *x)
+	}
+
+	log.Debugf("Results, %#v", logresults)
+	for _, x := range results {
+		k := keyFromDefaultListPath(x.Key, l)
 		if k != nil {
 			kvs = append(kvs, &model.KVPair{
 				Key:   k,
@@ -468,29 +573,41 @@ func (c *ClientWrapper) listHostMetadata(l model.HostMetadataListOptions) ([]*mo
 	return kvs, nil
 }
 
-func trimSlashForConsul(path string) string {
+func calicoPathToConsulPath(path string) string {
 	return strings.TrimLeft(path, "/")
 }
 
 func keyToDefaultPath(key model.Key) (string, error) {
 	path, err := model.KeyToDefaultPath(key)
-	return trimSlashForConsul(path), err
+	return calicoPathToConsulPath(path), err
 }
 
 func keyToDefaultDeletePath(key model.Key) (string, error) {
 	path, err := model.KeyToDefaultDeletePath(key)
-	return trimSlashForConsul(path), err
+	return calicoPathToConsulPath(path), err
 }
 
 func keyToDefaultDeleteParentPaths(key model.Key) ([]string, error) {
 	paths, err := model.KeyToDefaultDeleteParentPaths(key)
 	for i := 0; i < len(paths); i++ {
-		paths[i] = trimSlashForConsul(paths[i])
+		paths[i] = calicoPathToConsulPath(paths[i])
 	}
 
 	return paths, err
 }
 
+func listOptionsToDefaultPathRoot(listOptions model.ListInterface) string {
+	return calicoPathToConsulPath(model.ListOptionsToDefaultPathRoot(listOptions))
+}
+
+func consulPathToCalicoPath(path string) string {
+	return "/" + path
+}
+
 func keyFromDefaultPath(path string) model.Key {
-	return model.KeyFromDefaultPath("/" + path)
+	return model.KeyFromDefaultPath(consulPathToCalicoPath(path))
+}
+
+func keyFromDefaultListPath(path string, l model.ListInterface) model.Key {
+	return l.KeyFromDefaultPath(consulPathToCalicoPath(path))
 }

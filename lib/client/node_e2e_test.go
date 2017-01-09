@@ -159,7 +159,7 @@ var _ = Describe("Node tests", func() {
 		},
 		testutils.EnhanceWithConfigs(
 			// Test 1: One IPv4 and one IPv6 nodespecs.  One with ASNumber, one without.
-			Entry("Two fully populated NodeSpecs",
+			Entry("Two fully populated NodeSpecs. One with ASNumber, one without.",
 				api.NodeMetadata{Name: "node1"},
 				api.NodeMetadata{Name: "node2"},
 				api.NodeSpec{

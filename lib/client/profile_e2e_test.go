@@ -155,6 +155,7 @@ var _ = Describe("Profile tests", func() {
 			_, outError = c.Profiles().Get(meta1)
 
 			// Expect an error since the profile was deleted.
+			Expect(outError).NotTo(BeNil())
 			Expect(outError.Error()).To(Equal(errors.New("resource does not exist: ProfileTags(name=profile1)").Error()))
 
 			// Delete the second profile with meta2.

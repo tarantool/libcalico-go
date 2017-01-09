@@ -1,0 +1,7 @@
+kind: calicoApiConfig
+apiVersion: v1
+metadata:
+spec:
+  datastoreType: "etcdv2"
+  etcdScheme: "http"
+  etcdAuthority: "127.0.0.1:2379"

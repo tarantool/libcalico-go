@@ -27,15 +27,15 @@ test-containerized: $(BUILD_CONTAINER_MARKER) run-kubernetes-master
 	docker run --rm --privileged --net=host \
 	-e PLUGIN=calico \
 	-v ${PWD}:/go/src/github.com/projectcalico/libcalico-go:rw \
-	$(BUILD_CONTAINER_NAME) bash -c 'make WHAT=$(WHAT) SKIP=$(SKIP) ut && chown $(shell id -u):$(shell id -g) -R ./vendor'
+	$(BUILD_CONTAINER_NAME) bash -c 'make WHAT=$(WHAT) SKIP=$(SKIP) CONFIG_PATH=$(CONFIG_PATH) ut && chown $(shell id -u):$(shell id -g) -R ./vendor'
 
 .PHONY: test-containerized-mac-docker
 ## Run the tests in a container without k8s. https://github.com/vyshane/kid/issues/14
-test-containerized-mac-docker: $(BUILD_CONTAINER_MARKER) run-consul
+test-containerized-mac-docker: $(BUILD_CONTAINER_MARKER) run-consul run-etcd
 	docker run --rm --privileged --net=host \
 	-e PLUGIN=calico \
 	-v ${PWD}:/go/src/github.com/projectcalico/libcalico-go:rw \
-	$(BUILD_CONTAINER_NAME) bash -c 'make WHAT=$(WHAT) SKIP=$(SKIP) ut && chown $(shell id -u):$(shell id -g) -R ./vendor'
+	$(BUILD_CONTAINER_NAME) bash -c 'make WHAT=$(WHAT) SKIP=$(SKIP) CONFIG_PATH=$(CONFIG_PATH) ut && chown $(shell id -u):$(shell id -g) -R ./vendor'
 
 ## Install or update the tools used by the build
 .PHONY: update-tools
@@ -56,13 +56,13 @@ run-etcd:
 	--listen-client-urls "http://0.0.0.0:2379,http://0.0.0.0:4001"
 
 ## Run consul as a container
-run-consul: run-etcd
+run-consul:
 	-docker rm -f calico-consul
 	docker run --detach \
 	    --net=host \
 	    --name calico-consul consul:0.7.2
 
-run-kubernetes-master: stop-kubernetes-master run-consul
+run-kubernetes-master: stop-kubernetes-master run-etcd run-consul
 	# Run the kubelet which will launch the master components in a pod.
 	docker run \
                  -v /:/rootfs:ro \
