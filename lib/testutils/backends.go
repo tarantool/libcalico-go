@@ -48,7 +48,7 @@ func CleanBackend(config *api.CalicoAPIConfig) {
 }
 
 // DumpBackend prints out a recursive dump of the contents of backend.
-func DumpBackend(config *api.CalicoAPIConfig) {
+func DumpBackend(config *api.CalicoAPIConfig) error {
 	var output []byte
 	var err error
 
@@ -58,17 +58,23 @@ func DumpBackend(config *api.CalicoAPIConfig) {
 	case api.EtcdV2:
 		output, err = exec.Command("curl", "http://127.0.0.1:2379/v2/keys?recursive=true").Output()
 	case api.Consul:
-		output, err = exec.Command("consul", "kv", "get", "-recursive", "calico").Output()
+		output, err = exec.Command("curl", "http://127.0.0.1:8500/v1/kv/calico?recurse=").Output()
 	case api.Kubernetes:
 	default:
 		err = errors.New(fmt.Sprintf("Unknown datastore type: %v", config.Spec.DatastoreType))
 	}
 
 	if err != nil {
-		log.Println(err)
+		if ee, ok := err.(*exec.ExitError); ok {
+			log.Printf("Dump backend return error: %s, %v", string(ee.Stderr), *ee.ProcessState)
+		} else {
+			log.Println(err)
+		}
 	} else {
 		log.Println(string(output))
 	}
+
+	return err
 }
 
 func getConfigFileNames() []string {
@@ -82,7 +88,7 @@ func getConfigFileNames() []string {
 
 	// this is bad, I know. Suggestions are welcome
 	return []string{
-		"",
+		"../testutils/config/etcdv2.yaml",
 		"../testutils/config/consul.yaml",
 	}
 }

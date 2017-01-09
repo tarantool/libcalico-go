@@ -76,7 +76,8 @@ var _ = Describe("Node tests", func() {
 			_, err = c.Nodes().Apply(&api.Node{Metadata: meta2, Spec: spec2})
 			Expect(err).NotTo(HaveOccurred())
 
-			testutils.DumpBackend(config)
+			err = testutils.DumpBackend(config)
+			Expect(err).NotTo(HaveOccurred())
 
 			// Get node1.  This should not error, spec should match spec1.
 			By("Getting node1 and comparing with spec1")
