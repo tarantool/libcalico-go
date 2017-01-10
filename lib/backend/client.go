@@ -41,17 +41,16 @@ func NewClient(config api.CalicoAPIConfig) (c bapi.Client, err error) {
 	return
 }
 
-func NewRawClient(config api.CalicoAPIConfig) (c bapi.Client, err error) {
+func NewRawClient(config api.CalicoAPIConfig) (bapi.Client, error) {
 	switch config.Spec.DatastoreType {
 	case api.EtcdV2:
-		c, err = etcd.NewEtcdClient(&config.Spec.EtcdConfig)
+		return etcd.NewEtcdClient(&config.Spec.EtcdConfig)
 	case api.Kubernetes:
-		c, err = k8s.NewKubeClient(&config.Spec.KubeConfig)
+		return k8s.NewKubeClient(&config.Spec.KubeConfig)
 	case api.Consul:
-		c, err = consul.NewConsulClient(&config.Spec.ConsulConfig)
+		return consul.NewConsulClient(&config.Spec.ConsulConfig)
 	default:
-		err = errors.New(fmt.Sprintf("Unknown datastore type: %v",
+		return nil, errors.New(fmt.Sprintf("Unknown datastore type: %v",
 			config.Spec.DatastoreType))
 	}
-	return
 }
